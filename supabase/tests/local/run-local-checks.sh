@@ -16,3 +16,7 @@ for f in $(ls "$MIG"/*.sql | sort); do
 done
 echo "--- running phase1_checks.sql"
 "${PSQL[@]}" -d "$DB" -f "$HERE/phase1_checks.sql"
+echo "--- running matrix_01_setup.sql"
+"${PSQL[@]}" -d "$DB" -f "$HERE/matrix_01_setup.sql"
+echo "--- running security_matrix_checks.sql"
+"${PSQL[@]}" -d "$DB" -f "$HERE/security_matrix_checks.sql"
