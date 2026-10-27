@@ -375,7 +375,7 @@ function settingsPage(){
  else if(currentSettingsTab==='Sales preferences') panel=`<div class="settings-block"><h3>Billing defaults</h3><p>Customize how your demo point-of-sale behaves.</p><div class="switch-row"><div><strong>Ask for customer on each sale</strong><small>Walk-in customer is still available.</small></div><button class="toggle on" data-action="toggle-setting"><span></span></button></div><div class="switch-row"><div><strong>Allow discounts</strong><small>Discounts are applied to the bill total in this demo.</small></div><button class="toggle on" data-action="toggle-setting"><span></span></button></div><div class="switch-row"><div><strong>Show receipt after checkout</strong><small>Open a receipt preview when the sale is completed.</small></div><button class="toggle on" data-action="toggle-setting"><span></span></button></div></div>`;
  else if(currentSettingsTab==='Inventory') panel=`<div class="settings-block"><h3>Stock management</h3><p>Manage the default behavior for your clothing inventory.</p><div class="form-grid"><div><label>Default minimum stock</label><input type="number" min="0" value="5" id="defaultMinStock"></div><div><label>Stock unit</label><select><option>Pieces</option><option>Sets</option><option>Bundles</option></select></div></div><div class="switch-row"><div><strong>Allow negative inventory</strong><small>Not recommended: stock cannot go below zero in this demo.</small></div><button class="toggle" data-action="toggle-setting"><span></span></button></div><div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="btn primary" data-action="save-inventory-settings">Save preferences</button></div></div>`;
  else if(currentSettingsTab==='Appearance') panel=`<div class="settings-block"><h3>Appearance</h3><p>MA Collection uses a calm, light interface with warm neutral accents.</p><div class="switch-row"><div><strong>Dark appearance preview</strong><small>Toggle the preview's color scheme for your environment.</small></div><button class="toggle ${themeDark?'on':''}" data-action="toggle-theme"><span></span></button></div><div class="switch-row"><div><strong>Compact tables</strong><small>Keep lists dense for quicker scanning.</small></div><button class="toggle" data-action="toggle-setting"><span></span></button></div></div>`;
- else panel=`<div class="settings-block"><h3>Frontend demo & privacy</h3><p>This workspace is a standalone frontend demonstration. It does not connect to a backend, database, authentication provider, or payment service.</p><div class="inline-notice">${ic('info')}<div>All edits happen in the current preview session. Refreshing may reset sample changes. No real customer or payment data should be entered here.</div></div><button class="btn" data-action="reset-demo">${ic('refresh')} Reset demo data</button></div><div class="settings-block"><h3>Data tools</h3><p>Export current sample records to a local CSV file for review.</p><button class="btn" data-action="export-products">Export product catalog</button> <button class="btn" data-action="export-sales">Export sales</button></div>`;
+ else panel=`<div class="settings-block"><h3>Data & privacy</h3><p>Products, sales, customers, Khata, expenses, suppliers, categories and employees are stored in your Supabase database and protected by row-level security. Purchase orders are still kept in this browser only.</p><div class="inline-notice">${ic('info')}<div>No card or online payment is charged by this app; the payment method is only recorded. Sign out on shared computers.</div></div></div><div class="settings-block"><h3>Data tools</h3><p>Export current records to a CSV file.</p><button class="btn" data-action="export-products">Export product catalog</button> <button class="btn" data-action="export-sales">Export sales</button></div>`;
  return head('settings')+`<div class="settings-layout"><section class="panel settings-nav">${tabs.map(t=>`<button class="${currentSettingsTab===t?'active':''}" data-action="settings-tab" data-tab="${e(t)}">${ic(t==='Store profile'?'user':t==='Sales preferences'?'receipt':t==='Inventory'?'layers':t==='Appearance'?'spark':'info')}${e(t)}</button>`).join('')}</section><section class="panel"><div class="panel-head"><div><div class="panel-title">${e(currentSettingsTab)}</div><div class="panel-subtitle">Workspace configuration</div></div></div>${panel}</section></div>`;
 }
 function renderPage(){
@@ -435,10 +435,10 @@ async function loadProductsFromDatabase(){
 
     const costMap=new Map();
     if(['owner','manager'].includes(store.role)){
-      const {data:costRows,error:costError}=await client.rpc('get_product_costs',{
-        p_requested_store_id:store.id
-      });
-      if(costError)console.warn('Product costs unavailable; catalog will still load:',costError);
+      // Costs come from the owner/manager-only security_barrier view (0011).
+      const {data:costRows,error:costError}=await client
+        .from('products_costs').select('id,cost').eq('store_id',store.id);
+      if(costError)throw costError; // never load cost 0: an edit would overwrite the real cost
       (costRows||[]).forEach(c=>costMap.set(String(c.id),Number(c.cost)||0));
     }
 
@@ -823,7 +823,7 @@ document.addEventListener('click',ev=>{
 });
 document.addEventListener('submit',formSubmitDelegation);
 document.addEventListener('input',ev=>{if(ev.target.matches('[data-local-search]'))applySearch(ev.target);});
-document.addEventListener('change',ev=>{if(ev.target.id==='productCategoryFilter'){productFilter=ev.target.value;renderPage();}if(ev.target.id==='dashboardPeriod'){toast(`Sales overview updated: ${ev.target.value.toLowerCase()}.`);}if(ev.target.id==='reportPeriod'){toast(`Report period changed to ${ev.target.value.toLowerCase()}.`);}if(ev.target.id==='discountInput'){const oldPage=currentPage;if(oldPage==='billing'){const val=ev.target.value;const scroll=$('#pageContent').scrollTop;renderPage();const inp=$('#discountInput');if(inp)inp.value=val;}}});
+document.addEventListener('change',ev=>{if(ev.target.id==='productCategoryFilter'){productFilter=ev.target.value;renderPage();}if(ev.target.id==='dashboardPeriod'){toast(`Sales overview updated: ${ev.target.value.toLowerCase()}.`);}if(ev.target.id==='reportPeriod'){toast(`Report period changed to ${ev.target.value.toLowerCase()}.`);}if(ev.target.id==='discountInput'){const oldPage=currentPage;if(oldPage==='billing'){const val=ev.target.value;const keep=['#customerSelect','#paymentSelect','#customerPhone','#customCustomerName'].map(sel=>[sel,$(sel)?.value]);const customShown=$('#customCustomerGroup')?.style.display;renderPage();const inp=$('#discountInput');if(inp)inp.value=val;keep.forEach(([sel,v])=>{const el=$(sel);if(el&&v!==undefined&&v!==null){if(el.tagName==='SELECT'&&![...el.options].some(o=>o.value===v))return;el.value=v;}});const g=$('#customCustomerGroup');if(g&&customShown)g.style.display=customShown;}}});
 document.addEventListener('keydown',ev=>{if((ev.metaKey||ev.ctrlKey)&&ev.key.toLowerCase()==='k'){ev.preventDefault();const g=$('#globalSearch');g.focus();}if(ev.key==='Enter'&&ev.target.id==='globalSearch'){const q=ev.target.value.trim().toLowerCase();if(q){const p=products.find(p=>(p.name+' '+p.sku+' '+p.category).toLowerCase().includes(q));const c=customers.find(c=>(c.name+' '+c.phone).toLowerCase().includes(q));if(p){navigate('products');const i=$('[data-local-search="products"]');if(i){i.value=q;applySearch(i);}}else if(c){navigate('customers');const i=$('[data-local-search="customers"]');if(i){i.value=q;applySearch(i);}}else{navigate('sales');const i=$('[data-local-search="sales"]');if(i){i.value=q;applySearch(i);}}}}if(ev.key==='Escape'){closeModal();closeMenu();}});
 /* Clean first-run state; retain records entered in this browser on later visits. */
 const __savedState = (()=>{try{return JSON.parse(localStorage.getItem('maCollectionState')||'null')}catch{return null}})();
@@ -1006,11 +1006,249 @@ document.addEventListener('change',function(ev){
   }
 });
 document.addEventListener('blur',function(ev){if(ev.target&&ev.target.id==='customerPhone'){const normalized=normalizePakPhone(ev.target.value);if(normalized.length>=11)ev.target.value=normalized;}},true);
+/* ==========================================================================
+   Supabase data layer (Phase 2).
+   When a signed-in store is ready, customers, sales, Khata, expenses,
+   suppliers, categories, checkout and stock adjustments read from and write
+   to Supabase. All money/stock rules are enforced server-side by RLS and the
+   SECURITY DEFINER RPCs (create_sale, record_khata_payment, adjust_stock,
+   save_product, archive_product). Browser localStorage is no longer used as a
+   data source once the store is connected. Purchase orders remain
+   browser-only until a server-side receive function exists.
+   ========================================================================== */
+const MA_DB = { ready: false, checkoutBusy: false, pendingKey: null, pendingSig: null };
+function dbCtx(){const client=window.MA_SUPABASE, store=window.MA_STORE;return (client&&store&&store.id)?{client,store}:null;}
+function newIdempotencyKey(prefix){const r=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():(Date.now().toString(36)+Math.random().toString(36).slice(2));return (prefix+'-'+r).slice(0,100);}
+function dbErrorText(error,fallback){const m=String(error&&error.message||'');return m||fallback||'Database error';}
+const PAY_LABEL={cash:'Cash',card:'Card',credit:'Credit',online:'Online'};
+const STATUS_LABEL={completed:'Completed',pending:'Pending',voided:'Voided'};
+
+async function loadCustomersFromDatabase(){
+  const ctx=dbCtx();if(!ctx)return;
+  const {data,error}=await ctx.client.from('customers')
+    .select('id,name,phone,email,khata_balance,order_count,created_at')
+    .eq('store_id',ctx.store.id).eq('is_active',true).order('name',{ascending:true});
+  if(error)throw error;
+  customers.splice(0,customers.length,...(data||[]).map(r=>({id:r.id,name:r.name,phone:r.phone||'',email:r.email||'',balance:Number(r.khata_balance)||0,orders:Number(r.order_count)||0,joined:String(r.created_at||'').slice(0,10)})));
+}
+async function loadKhataLedgerFromDatabase(){
+  const ctx=dbCtx();if(!ctx)return;
+  const {data,error}=await ctx.client.from('khata_entries')
+    .select('id,customer_id,entry_type,amount_change,balance_after,note,created_at')
+    .eq('store_id',ctx.store.id).order('created_at',{ascending:false}).limit(1000);
+  if(error)throw error;
+  const names=new Map(customers.map(c=>[String(c.id),c.name]));
+  khataLedger.splice(0,khataLedger.length,...(data||[]).map(r=>({id:r.id,customerId:r.customer_id,customer:names.get(String(r.customer_id))||'',type:Number(r.amount_change)>0?'charge':'payment',amount:Math.abs(Number(r.amount_change)||0),balanceAfter:Number(r.balance_after)||0,date:r.created_at,note:r.note||''})));
+}
+async function loadSalesFromDatabase(){
+  const ctx=dbCtx();if(!ctx)return;
+  const {data,error}=await ctx.client.from('sales')
+    .select('id,sale_number,customer_id,customer_name,customer_phone,sold_at,subtotal,discount,total,payment_method,status,sale_items(product_id,product_name,quantity,unit_price)')
+    .eq('store_id',ctx.store.id).order('sold_at',{ascending:false}).limit(500);
+  if(error)throw error;
+  const profit=new Map();
+  if(['owner','manager'].includes(ctx.store.role)&&(data||[]).length){
+    const {data:fin,error:finError}=await ctx.client.from('sales_financials').select('id,profit').eq('store_id',ctx.store.id).in('id',data.map(s=>s.id));
+    if(finError)console.warn('Sale profit unavailable:',finError);
+    (fin||[]).forEach(f=>profit.set(String(f.id),Number(f.profit)||0));
+  }
+  sales.splice(0,sales.length,...(data||[]).map(s=>({
+    id:Number(s.sale_number),dbId:s.id,customerId:s.customer_id,customer:s.customer_name,phone:s.customer_phone||'',date:s.sold_at,
+    items:(s.sale_items||[]).map(i=>({productId:i.product_id,name:i.product_name,qty:Number(i.quantity),price:Number(i.unit_price)})),
+    subtotal:Number(s.subtotal),discount:Number(s.discount),total:Number(s.total),
+    payment:PAY_LABEL[s.payment_method]||s.payment_method,status:STATUS_LABEL[s.status]||s.status,profit:profit.get(String(s.id))||0
+  })));
+}
+async function loadExpensesFromDatabase(){
+  const ctx=dbCtx();if(!ctx||!['owner','manager'].includes(ctx.store.role)){expenses.splice(0,expenses.length);return;}
+  const {data,error}=await ctx.client.from('expenses').select('id,title,category,amount,expense_date,note')
+    .eq('store_id',ctx.store.id).order('expense_date',{ascending:false}).limit(1000);
+  if(error)throw error;
+  expenses.splice(0,expenses.length,...(data||[]).map(x=>({id:x.id,title:x.title,category:x.category,amount:Number(x.amount),date:x.expense_date,note:x.note||''})));
+}
+async function loadSuppliersFromDatabase(){
+  const ctx=dbCtx();if(!ctx||!['owner','manager'].includes(ctx.store.role)){suppliers.splice(0,suppliers.length);return;}
+  const {data,error}=await ctx.client.from('suppliers').select('id,name,contact_person,phone,category,payable_balance')
+    .eq('store_id',ctx.store.id).eq('is_active',true).order('name',{ascending:true});
+  if(error)throw error;
+  suppliers.splice(0,suppliers.length,...(data||[]).map(s=>({id:s.id,name:s.name,contact:s.contact_person||'',phone:s.phone||'',category:s.category||'',balance:Number(s.payable_balance)||0})));
+}
+async function loadAllFromDatabase(){
+  if(!dbCtx())return;
+  const steps=[['customers',loadCustomersFromDatabase],['sales',loadSalesFromDatabase],['expenses',loadExpensesFromDatabase],['suppliers',loadSuppliersFromDatabase]];
+  const failed=[];
+  for(const [label,fn] of steps){try{await fn();}catch(error){console.error(label+' load failed:',error);failed.push(label);}}
+  try{await loadKhataLedgerFromDatabase();}catch(error){console.error('Khata ledger load failed:',error);failed.push('khata');}
+  MA_DB.ready=true;renderPage();
+  if(failed.length)toast('Could not load '+failed.join(', ')+' from the database. Check connection and permissions.');
+}
+
+/* Checkout: the server prices, validates stock, writes the sale, items,
+   payments, stock and Khata atomically. Repeated clicks reuse one key. */
+const __localCheckout=checkout;
+checkout=async function(options){
+  const ctx=dbCtx();if(!ctx)return __localCheckout(options);
+  const share=!!(options&&options.share);
+  if(MA_DB.checkoutBusy)return;
+  if(!cart.length){if(share&&lastReceipt){shareBillFile(lastReceipt);return;}toast('Add at least one product to the bill.');return;}
+  const selected=$('#customerSelect'),phoneField=$('#customerPhone'),customField=$('#customCustomerName');
+  let customerName=selected?selected.value:'Walk-in customer';
+  if(customerName==='__custom__'){customerName=customField?customField.value.trim():'';if(!customerName){toast('Enter the customer name or select a registered customer.');return;}}
+  let phone=phoneField?String(phoneField.value||'').trim():'';
+  if(phone){phone=normalizePakPhone(phone);if(!/^923\d{9}$/.test(phone)){toast('Enter a valid Pakistani mobile number, e.g. 03xxxxxxxxx.');return;}}
+  const payment=($('#paymentSelect')?.value||'Cash').toLowerCase();
+  let totals;try{totals=calculateCartTotals(cart,$('#discountInput')?$('#discountInput').value:0,true);}catch(error){toast(error.message);return;}
+  const customer=customers.find(c=>c.name===customerName)||null;
+  if(payment==='credit'&&!customer){toast('Select a registered customer for a credit/khata sale.');return;}
+  const items=cart.map(it=>({product_id:String(it.id),quantity:Number(it.qty),unit_price:Number(it.price)}));
+  const sig=JSON.stringify([items,payment,totals.discount,customer&&customer.id,customerName,phone]);
+  if(MA_DB.pendingSig!==sig){MA_DB.pendingSig=sig;MA_DB.pendingKey=newIdempotencyKey('sale');}
+  MA_DB.checkoutBusy=true;
+  try{
+    const {data,error}=await ctx.client.rpc('create_sale',{
+      p_store_id:ctx.store.id,p_items:items,p_payment_method:payment,p_idempotency_key:MA_DB.pendingKey,
+      p_discount:totals.discount,p_customer_id:customer?customer.id:null,
+      p_customer_name:customer?null:(customerName||null),p_customer_phone:phone||null
+    });
+    if(error)throw error;
+    const row=Array.isArray(data)?data[0]:data;
+    if(!row||!row.sale_id)throw new Error('The database did not return the sale.');
+    MA_DB.pendingKey=null;MA_DB.pendingSig=null;cart=[];
+    try{await Promise.all([loadProductsFromDatabase(),loadSalesFromDatabase(),loadCustomersFromDatabase()]);await loadKhataLedgerFromDatabase();}catch(error){console.error('Reload after sale failed:',error);}
+    const sale=sales.find(s=>String(s.dbId)===String(row.sale_id))||{id:Number(row.sale_number),dbId:row.sale_id,customer:customerName||'Walk-in customer',phone,date:new Date().toISOString(),items:items.map(i=>{const p=findById(products,i.product_id);return {productId:i.product_id,name:p?p.name:'Item',qty:i.quantity,price:i.unit_price};}),subtotal:totals.subtotal,discount:totals.discount,total:Number(row.total),payment:PAY_LABEL[payment],status:payment==='credit'?'Pending':'Completed',profit:0};
+    lastReceipt=sale;renderPage();closeModal();
+    if(share)shareBillFile(sale);else{downloadReceiptPdf(sale);openReceipt(sale);}
+    toast('Sale #'+sale.id+' saved to database.');
+  }catch(error){
+    console.error('Checkout failed:',error);
+    toast('Sale not saved: '+dbErrorText(error,'check connection and stock.'));
+  }finally{MA_DB.checkoutBusy=false;}
+};
+
+/* Form submissions that must reach the database. */
+const __localFormSubmit=handleFormSubmit;
+handleFormSubmit=async function(form){
+  const ctx=dbCtx(),kind=form.dataset.form;
+  if(!ctx||!['customer','khata-payment','supplier','expense','category'].includes(kind))return __localFormSubmit(form);
+  if(!canSubmitForm(form)){toast('You do not have permission to save this record.');return;}
+  const d=Object.fromEntries(new FormData(form).entries()),id=String(d.id||'').trim();
+  const btn=form.closest('.modal')?.querySelector('[type="submit"]');if(btn)btn.disabled=true;
+  try{
+    if(kind==='customer'){
+      const name=String(d.name||'').trim(),phone=normalizePakPhone(d.phone),email=String(d.email||'').trim();
+      if(!name||name.length>120||!/^923\d{9}$/.test(phone)){toast('Enter a name and a valid Pakistani mobile number.');return;}
+      const existing=id?findById(customers,id):null,balance=d.balance===undefined?null:Number(d.balance);
+      if(balance!==null&&balance!==(existing?existing.balance:0)){toast('Khata balance changes only through credit sales and recorded payments.');return;}
+      const payload={name,phone,email:email||null};
+      const res=id?await ctx.client.from('customers').update(payload).eq('id',id).eq('store_id',ctx.store.id).select('id').maybeSingle()
+                  :await ctx.client.from('customers').insert({...payload,store_id:ctx.store.id}).select('id').single();
+      if(res.error)throw res.error;if(!res.data)throw new Error('Customer was not saved; check permissions.');
+      await loadCustomersFromDatabase();toast(id?'Customer updated.':'Customer added.');
+    }else if(kind==='khata-payment'){
+      const c=findById(customers,d.customerId);let amount;try{amount=toSafeWholeNumber(d.amount,'Payment amount');}catch(error){toast(error.message);return;}
+      if(!c||amount<1||amount>c.balance){toast('Payment must be greater than zero and cannot exceed the outstanding balance.');return;}
+      if(!form.dataset.idempotencyKey)form.dataset.idempotencyKey=newIdempotencyKey('kpay');
+      const {error}=await ctx.client.rpc('record_khata_payment',{p_store_id:ctx.store.id,p_customer_id:c.id,p_amount:amount,p_idempotency_key:form.dataset.idempotencyKey,p_method:'cash',p_note:String(d.note||'').trim()||null});
+      if(error)throw error;
+      await loadCustomersFromDatabase();await loadKhataLedgerFromDatabase();toast('Khata payment recorded.');
+    }else if(kind==='supplier'){
+      const name=String(d.name||'').trim(),phone=normalizePakPhone(d.phone);
+      if(!name||!/^923\d{9}$/.test(phone)){toast('Enter a supplier name and a valid Pakistani mobile number.');return;}
+      const existing=id?findById(suppliers,id):null,balance=d.balance===undefined?null:Number(d.balance);
+      if(balance!==null&&balance!==(existing?existing.balance:0)){toast('Supplier balance changes only through purchase orders and supplier payments.');return;}
+      const payload={name,contact_person:String(d.contact||'').trim()||null,phone,category:String(d.category||'').trim()||null};
+      const res=id?await ctx.client.from('suppliers').update(payload).eq('id',id).eq('store_id',ctx.store.id).select('id').maybeSingle()
+                  :await ctx.client.from('suppliers').insert({...payload,store_id:ctx.store.id}).select('id').single();
+      if(res.error)throw res.error;if(!res.data)throw new Error('Supplier was not saved; check permissions.');
+      await loadSuppliersFromDatabase();toast(id?'Supplier updated.':'Supplier added.');
+    }else if(kind==='expense'){
+      const title=String(d.title||'').trim(),amount=Number(d.amount),date=String(d.date||todayIso());
+      if(!title||!Number.isSafeInteger(amount)||amount<1){toast('Enter an expense title and an amount greater than zero.');return;}
+      const payload={title,category:d.category,amount,expense_date:date,note:String(d.note||'').trim()||null};
+      const res=id?await ctx.client.from('expenses').update(payload).eq('id',id).eq('store_id',ctx.store.id).select('id').maybeSingle()
+                  :await ctx.client.from('expenses').insert({...payload,store_id:ctx.store.id}).select('id').single();
+      if(res.error)throw res.error;if(!res.data)throw new Error('Expense was not saved; check permissions.');
+      await loadExpensesFromDatabase();toast(id?'Expense updated.':'Expense recorded.');
+    }else if(kind==='category'){
+      const old=String(d.oldName||''),name=String(d.name||'').trim(),description=String(d.description||'').trim()||null;
+      if(!name){toast('Enter a category name.');return;}
+      if(categories.some(c=>c.name.toLowerCase()===name.toLowerCase()&&c.name!==old)){toast('A category with this name already exists.');return;}
+      const oldCat=old?categories.find(c=>c.name===old):null;
+      const res=oldCat&&oldCat.id?await ctx.client.from('categories').update({name,description}).eq('id',oldCat.id).eq('store_id',ctx.store.id).select('id').maybeSingle()
+                                 :await ctx.client.from('categories').insert({store_id:ctx.store.id,name,description}).select('id').single();
+      if(res.error)throw res.error;if(!res.data)throw new Error('Category was not saved; check permissions.');
+      await loadProductsFromDatabase();toast(old?'Category updated.':'Category created.');
+    }
+    closeModal();renderPage();
+  }catch(error){
+    console.error(kind+' save failed:',error);
+    const msg=dbErrorText(error,'');
+    toast(error&&error.code==='23505'?'A record with this phone or name already exists.':'Could not save: '+(msg||'check connection and permissions.'));
+  }finally{if(btn)btn.disabled=false;}
+};
+
+/* Deletes and stock adjustments that must reach the database. */
+const __localHandleAction=handleAction;
+handleAction=function(action,target){
+  const ctx=dbCtx();
+  if(!ctx||!['delete-customer','delete-supplier','delete-expense','delete-category'].includes(action))return __localHandleAction(action,target);
+  if(!canPerformAction(action,target)){toast('You do not have permission to perform this action.');return;}
+  const id=target.dataset.id,name=target.dataset.name;
+  void (async()=>{
+    try{
+      if(action==='delete-customer'){
+        const c=findById(customers,id);if(!c||!confirm('Remove customer '+c.name+'? Their sales and Khata history are kept.'))return;
+        if(c.balance>0){toast('This customer still owes '+money(c.balance)+'. Record the payment first.');return;}
+        const {error}=await ctx.client.from('customers').update({is_active:false}).eq('id',c.id).eq('store_id',ctx.store.id);if(error)throw error;
+        await loadCustomersFromDatabase();toast('Customer removed.');
+      }else if(action==='delete-supplier'){
+        const s=findById(suppliers,id);if(!s||!confirm('Remove supplier '+s.name+'? Purchase history is kept.'))return;
+        const {error}=await ctx.client.from('suppliers').update({is_active:false}).eq('id',s.id).eq('store_id',ctx.store.id);if(error)throw error;
+        await loadSuppliersFromDatabase();toast('Supplier removed.');
+      }else if(action==='delete-expense'){
+        const x=findById(expenses,id);if(!x||!confirm('Delete expense '+x.title+'?'))return;
+        const {error}=await ctx.client.from('expenses').delete().eq('id',x.id).eq('store_id',ctx.store.id);if(error)throw error;
+        await loadExpensesFromDatabase();toast('Expense deleted.');
+      }else if(action==='delete-category'){
+        const c=categories.find(c=>c.name===name);if(!c)return;
+        if(products.some(p=>p.category===name)){toast('Move or remove the products in this category first.');return;}
+        if(!confirm('Delete category '+c.name+'?'))return;
+        if(c.id){const {error}=await ctx.client.from('categories').delete().eq('id',c.id).eq('store_id',ctx.store.id);if(error)throw error;}
+        await loadProductsFromDatabase();toast('Category deleted.');
+      }
+      renderPage();
+    }catch(error){console.error(action+' failed:',error);toast('Could not complete: '+dbErrorText(error,'check permissions.'));}
+  })();
+};
+
+/* Stock adjustment form goes through adjust_stock(); runs before the legacy
+   submit handler and stops it. */
+document.addEventListener('submit',async function(ev){
+  const form=ev.target.closest&&ev.target.closest('form[data-form="stock"]');const ctx=dbCtx();
+  if(!form||!ctx)return;
+  ev.preventDefault();ev.stopImmediatePropagation();
+  if(!['owner','manager'].includes(ctx.store.role)){toast('Owner or manager access required to adjust stock.');return;}
+  const d=Object.fromEntries(new FormData(form).entries()),p=products.find(x=>x.name===d.productId);
+  let q;try{q=toSafeWholeNumber(d.quantity,'Stock quantity');}catch(error){toast(error.message);return;}
+  if(!p){toast('Select a valid product.');return;}
+  const type=d.type==='Add stock'?'add':d.type==='Remove stock'?'remove':'set';
+  try{
+    const {data,error}=await ctx.client.rpc('adjust_stock',{p_store_id:ctx.store.id,p_product_id:p.id,p_type:type,p_quantity:q,p_reason:String(d.reason||'').trim()||null});
+    if(error)throw error;
+    p.stock=Number(data);closeModal();renderPage();toast('Stock updated for '+p.name+'.');
+  }catch(error){console.error('Stock adjustment failed:',error);toast('Stock not updated: '+dbErrorText(error,'check permissions.'));}
+},true);
+
+/* Never write business data to localStorage once a store is connected. */
+const __localPersist=persistState;
+persistState=function(){if(dbCtx())return;return __localPersist();};
 window.addEventListener('ma-store-ready', function () {
   if (window.MA_STORE && currentRole()) {
     if(currentRole()==='owner') loadEmployeesFromDatabase();
+    cart=[];lastReceipt=null;
+    [customers,suppliers,sales,expenses,khataLedger].forEach(list=>list.splice(0,list.length));
     renderPage();
-    void loadProductsFromDatabase();
+    void loadProductsFromDatabase().then(loadAllFromDatabase);
   }
 });
 renderPage();

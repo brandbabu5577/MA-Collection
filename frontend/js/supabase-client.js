@@ -1,19 +1,27 @@
-// MA Collection — Supabase JS v2 client (Step 0: configuration only).
+// MA Collection — Supabase JS v2 client.
 //
-// This module defines the single shared Supabase client. It is intentionally
-// NOT loaded by index.html yet, so the existing app behavior is unchanged.
-// Later phases will load it and use the exported `supabase` client.
+// Loaded by auth.js. Defines the single shared Supabase client and exposes it
+// to app.js as window.MA_SUPABASE.
 //
 // It uses the publishable / anon key only (see supabase-config.js). No
 // service-role key is referenced anywhere in the frontend.
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 import supabaseConfig from './supabase-config.js';
 
-const isPlaceholder =
-  typeof supabaseConfig.url !== 'string' ||
-  typeof supabaseConfig.anonKey !== 'string' ||
-  supabaseConfig.url.includes('YOUR_SUPABASE') ||
-  supabaseConfig.anonKey.includes('YOUR_SUPABASE');
+// Treat any template value as "not configured" so the login gate shows the
+// setup screen instead of trying to reach a fake project.
+function isPlaceholderConfig(config) {
+  const url = config && typeof config.url === 'string' ? config.url.trim() : '';
+  const key = config && typeof config.anonKey === 'string' ? config.anonKey.trim() : '';
+  if (!url || !key || /YOUR[-_]/i.test(url) || /YOUR[-_]/i.test(key)) return true;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol !== 'https:' && parsed.hostname !== '127.0.0.1' && parsed.hostname !== 'localhost';
+  } catch (_) {
+    return true;
+  }
+}
+const isPlaceholder = isPlaceholderConfig(supabaseConfig);
 
 if (isPlaceholder) {
   throw new Error(
@@ -23,8 +31,7 @@ if (isPlaceholder) {
 
 export const supabase = createClient(supabaseConfig.url, supabaseConfig.anonKey);
 
-// Expose the client for the existing classic (non-module) app script to use in
-// later steps without a bundler. Harmless while this file is not loaded.
+// Expose the client to the classic (non-module) app.js script.
 window.MA_SUPABASE = supabase;
 
 export default supabase;

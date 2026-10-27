@@ -1,9 +1,8 @@
-// MA Collection â€” owner authentication gate (Step 1).
+// MA Collection — owner authentication gate (Step 1).
 //
 // Adds a signup / login gate and one-time store setup in front of the existing
 // demo app, using the shared Supabase JS v2 client (frontend/js/supabase-client.js).
-// Only authentication and the owner's initial store are handled here: products,
-// sales, inventory, Khata and every other feature stay on demo data for now.
+// Business data itself is loaded by app.js once 'ma-store-ready' fires.
 //
 // Security notes:
 //  - Authentication is verified by Supabase Auth only. No localStorage flag is
@@ -68,7 +67,7 @@ function renderGate() {
   }
 
   if (state.mode === 'loading') {
-    gate.innerHTML = card(`<h1 class="auth-title">MA Collection</h1><p class="auth-sub">Checking your sessionâ€¦</p>`);
+    gate.innerHTML = card(`<h1 class="auth-title">MA Collection</h1><p class="auth-sub">Checking your session…</p>`);
     return;
   }
 
@@ -116,7 +115,7 @@ function renderGate() {
         </div>
         <div><label for="storePhone">Phone (optional)</label><input id="storePhone" name="storePhone" type="tel" maxlength="30" placeholder="03xx xxxxxxx"></div>
         <div><label for="storeAddress">Address (optional)</label><input id="storeAddress" name="storeAddress" type="text" maxlength="300" placeholder="Shop address"></div>
-        <button class="btn primary full" type="submit" ${state.busy ? 'disabled' : ''}>${state.busy ? 'Creating your shopâ€¦' : 'Create my shop'}</button>
+        <button class="btn primary full" type="submit" ${state.busy ? 'disabled' : ''}>${state.busy ? 'Creating your shop…' : 'Create my shop'}</button>
       </form>
       <div class="auth-foot"><button class="link-button" type="button" data-auth="logout-link">Sign out</button></div>
     `);
@@ -136,10 +135,9 @@ function renderGate() {
       ${isSignup ? `<div><label for="fullName">Your name (optional)</label><input id="fullName" name="fullName" type="text" maxlength="120" autocomplete="name" placeholder="Shop owner name" value="${esc(state.pendingName)}"></div>` : ''}
       <div><label for="email">Email</label><input id="email" name="email" type="email" required autocomplete="email" placeholder="you@example.com" value="${esc(state.pendingEmail)}"></div>
       <div><label for="password">Password</label><input id="password" name="password" type="password" required minlength="6" autocomplete="${isSignup ? 'new-password' : 'current-password'}" placeholder="${isSignup ? 'At least 6 characters' : 'Your password'}"></div>
-      <button class="btn primary full" type="submit" ${state.busy ? 'disabled' : ''}>${state.busy ? 'Please waitâ€¦' : (isSignup ? 'Create account' : 'Log in')}</button>
+      <button class="btn primary full" type="submit" ${state.busy ? 'disabled' : ''}>${state.busy ? 'Please wait…' : (isSignup ? 'Create account' : 'Log in')}</button>
     </form>
-    <div class="auth-demo">Sample data is still shown in this build. Products, sales, inventory and Khata are not connected to the database yet.</div>
-  `);
+      `);
   const first = gate.querySelector('input');
   if (first) first.focus();
 }
