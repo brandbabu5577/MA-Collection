@@ -4,3 +4,10 @@ node_modules/
 !.env.example
 .DS_Store
 Thumbs.db
+# Local backups and temporary files
+.backups/
+*.bak
+*.backup-*
+*.before-*
+supabase/.temp/
+server1.txt

@@ -352,3 +352,25 @@ tbody tr:hover { background:color-mix(in srgb, var(--surface-2) 58%, transparent
   .report-labels { gap:8px; }
 }
 @media (max-width:390px) { .stats-grid { gap:8px; } .stat-card { padding:11px; } .stat-value { font-size:19px; } .head-actions .btn { padding:9px 8px; font-size:10px; } .page-kicker { font-size:9px; } .pos-art { height:72px; } }
+
+/* Auth gate (Step 1) */
+#appRoot[hidden] { display:none; }
+.auth-gate { min-height:100vh; width:100%; display:flex; align-items:center; justify-content:center; padding:24px; background:var(--canvas); }
+.auth-gate[hidden] { display:none; }
+.auth-card { width:min(100%,430px); background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow); padding:26px 26px 24px; }
+.auth-brand { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
+.auth-title { font-size:20px; letter-spacing:-.6px; margin:0 0 7px; }
+.auth-sub { color:var(--muted); font-size:11px; line-height:1.65; margin:0 0 18px; }
+.auth-sub code { background:var(--surface-2); border:1px solid var(--line); border-radius:6px; padding:1px 5px; font-size:10px; }
+.auth-tabs { display:flex; gap:4px; padding:4px; border:1px solid var(--line); background:var(--surface-2); border-radius:10px; margin-bottom:18px; }
+.auth-tabs button { flex:1; border:0; background:transparent; color:var(--muted); font-size:11px; font-weight:700; padding:8px 10px; border-radius:7px; }
+.auth-tabs button.active { color:var(--text); background:var(--surface); box-shadow:0 1px 3px rgba(0,0,0,.06); }
+.auth-form { display:grid; gap:13px; }
+.auth-form label { display:block; font-size:10px; font-weight:750; color:var(--muted); margin-bottom:7px; }
+.auth-form input, .auth-form select { width:100%; border:1px solid var(--line); border-radius:9px; padding:11px; background:var(--surface); color:var(--text); font-size:11px; }
+.auth-status { border-radius:10px; padding:11px 13px; font-size:10px; line-height:1.6; margin-bottom:15px; }
+.auth-status.error { background:var(--red-soft); border:1px solid color-mix(in srgb,var(--red) 25%,transparent); color:var(--red); }
+.auth-status.info { background:var(--gold-soft); border:1px solid color-mix(in srgb,var(--gold) 25%,transparent); color:var(--text); }
+.auth-demo { margin-top:17px; padding-top:15px; border-top:1px solid var(--line); color:var(--muted); font-size:10px; line-height:1.6; }
+.auth-foot { margin-top:15px; display:flex; justify-content:center; gap:14px; font-size:10px; color:var(--muted); }
+.breadcrumb .badge { margin-left:8px; vertical-align:middle; }

@@ -57,7 +57,72 @@ const navGroups = [
  {label:'Analysis',items:[['reports','Reports & analytics','chart']]},
  {label:'System',items:[['settings','Settings','settings']]}
 ];
-let currentPage='dashboard';
+
+const ROLE_PAGE_ACCESS = Object.freeze({
+  owner: ['dashboard','billing','sales','products','inventory','categories','customers','suppliers','employees','purchase-orders','expenses','reports','settings'],
+  manager: ['dashboard','billing','sales','products','inventory','categories','customers','suppliers','purchase-orders','expenses','reports'],
+  cashier: ['billing','sales','products','customers']
+});
+const CASHIER_ACTIONS = new Set([
+  'toggle-menu','close-menu','close-modal','backdrop-close','modal-submit',
+  'help','toggle-theme','product-category','pos-category','add-cart',
+  'cart-qty','clear-cart','checkout','share-bill','sales-filter',
+  'view-sale','print-sale','add-customer','edit-customer','view-customer'
+]);
+const MANAGER_BLOCKED_ACTIONS = new Set([
+  'add-employee','edit-employee','delete-employee','store-switch',
+  'settings-tab','toggle-setting','save-inventory-settings',
+  'reset-demo','clear-local-data'
+]);
+function currentRole() {
+  const role = window.MA_STORE && window.MA_STORE.role;
+  return Object.prototype.hasOwnProperty.call(ROLE_PAGE_ACCESS, role) ? role : null;
+}
+function canAccessPage(page) {
+  const role = currentRole();
+  return !!role && ROLE_PAGE_ACCESS[role].includes(page);
+}
+function canSubmitForm(form) {
+  const role = currentRole();
+  if (!form || !role) return false;
+  if (role === 'owner') return true;
+  const kind = form.dataset ? form.dataset.form : '';
+  if (role === 'manager') {
+    return kind !== 'employee' && form.id !== 'storeSettingsForm';
+  }
+  return role === 'cashier' && kind === 'customer';
+}
+function canPerformAction(action, target) {
+  const role = currentRole();
+  if (!role) return false;
+  if (role === 'owner') return true;
+
+  if (role === 'manager') {
+    if (MANAGER_BLOCKED_ACTIONS.has(action)) return false;
+    if (action === 'modal-submit') {
+      const id = target && target.dataset ? target.dataset.submitForm : '';
+      const form = id ? document.getElementById(id) : null;
+      return form ? canSubmitForm(form) : !!lastReceipt;
+    }
+    return true;
+  }
+
+  if (!CASHIER_ACTIONS.has(action)) return false;
+  if (action === 'modal-submit') {
+    const id = target && target.dataset ? target.dataset.submitForm : '';
+    const form = id ? document.getElementById(id) : null;
+    return form ? canSubmitForm(form) : !!lastReceipt;
+  }
+  return true;
+}
+function hideForbiddenActions(root) {
+  if (!root) return;
+  root.querySelectorAll('[data-action]').forEach(el => {
+    if (!canPerformAction(el.dataset.action, el)) el.hidden = true;
+  });
+}
+
+let currentPage = (() => { try { return sessionStorage.getItem('maCollectionCurrentPage') || 'dashboard'; } catch (_) { return 'dashboard'; } })();
 let salesFilter='All';
 let productFilter='All';
 let categoryFilter='All';
@@ -129,8 +194,8 @@ const pageMeta = {
 };
 function pageIcon(page){ const found=navGroups.flatMap(g=>g.items).find(a=>a[0]===page); return ic(found?.[2]||'dashboard'); }
 function renderNav(){
- $('#navContainer').innerHTML = navGroups.map(g=>`<div class="nav-group"><div class="nav-label">${g.label}</div>${g.items.map(([id,label,ico])=>`<button class="nav-item ${currentPage===id?'active':''}" data-nav="${id}">${ic(ico)}<span>${label}</span>${id==='inventory'&&products.some(p=>p.stock<=p.minStock)?'<span class="nav-count">'+products.filter(p=>p.stock<=p.minStock).length+'</span>':''}</button>`).join('')}</div>`).join('');
- $('#mobileBottom').innerHTML = [['dashboard','Home','dashboard'],['billing','New sale','cart'],['products','Products','package'],['sales','Sales','receipt'],['settings','More','menu']].map(([id,label,ico])=>`<button class="${currentPage===id?'active':''}" data-nav="${id}">${ic(ico)}<span>${label}</span></button>`).join('');
+ $('#navContainer').innerHTML = navGroups.map(g=>({...g,items:g.items.filter(([id])=>canAccessPage(id))})).filter(g=>g.items.length).map(g=>`<div class="nav-group"><div class="nav-label">${g.label}</div>${g.items.map(([id,label,ico])=>`<button class="nav-item ${currentPage===id?'active':''}" data-nav="${id}">${ic(ico)}<span>${label}</span>${id==='inventory'&&products.some(p=>p.stock<=p.minStock)?'<span class="nav-count">'+products.filter(p=>p.stock<=p.minStock).length+'</span>':''}</button>`).join('')}</div>`).join('');
+ $('#mobileBottom').innerHTML = [['dashboard','Home','dashboard'],['billing','New sale','cart'],['products','Products','package'],['sales','Sales','receipt'],['settings','More','menu']].filter(([id])=>canAccessPage(id)).map(([id,label,ico])=>`<button class="${currentPage===id?'active':''}" data-nav="${id}">${ic(ico)}<span>${label}</span></button>`).join('');
 }
 function head(page,extra=''){const [title,desc]=pageMeta[page]||pageMeta.dashboard;return `<div class="page-head"><div><div class="page-kicker"><span class="kicker-dot"></span> SHOP WORKSPACE <span style="opacity:.5">/</span> ${e((pageMeta[page]||pageMeta.dashboard)[0].toUpperCase())}</div><h1>${e(title)}</h1><p class="page-desc">${e(desc)}</p></div>${extra?`<div class="head-actions">${extra}</div>`:''}</div>`;}
 function stat(label,value,ico,foot='',trend=''){return `<div class="stat-card"><div class="stat-top"><span>${label}</span><span class="stat-icon">${ic(ico)}</span></div><div class="stat-value">${value}</div><div class="stat-footer">${trend?`<span class="trend">${trend}</span>`:''}${foot}</div></div>`;}
@@ -193,9 +258,48 @@ function suppliersPage(){
 function categoriesPage(){
  return head('categories',`<button class="btn primary" data-action="add-category">${ic('plus')} Add category</button>`)+`<div class="inline-notice">${ic('info')}<div>Use categories to keep your clothing catalog tidy. Product counts are recalculated as you add or edit items.</div></div><div class="category-grid">${categories.map(c=>`<div class="category-card"><div class="category-symbol">${ic(c.name==='Accessories'?'spark':c.name==='Ready to wear'?'shirt':'tag')}</div><strong>${e(c.name)}</strong><small>${products.filter(p=>p.category===c.name).length} products · ${e(c.description)}</small><div style="display:flex;justify-content:flex-end;gap:5px;margin-top:14px"><button class="mini-icon" data-action="edit-category" data-name="${e(c.name)}" aria-label="Edit category">${ic('edit')}</button><button class="mini-icon" data-action="delete-category" data-name="${e(c.name)}" aria-label="Delete category">${ic('trash')}</button></div></div>`).join('')}</div>`;
 }
+
+async function loadEmployeesFromDatabase(){
+  const client=window.MA_SUPABASE, store=window.MA_STORE;
+  if(!client||!store||!store.id||store.role!=='owner')return;
+  employees.splice(0,employees.length);
+  try{
+    const {data,error}=await client.from('employees')
+      .select('id,name,role_title,phone,status')
+      .eq('store_id',store.id).order('created_at',{ascending:false});
+    if(error)throw error;
+    employees.splice(0,employees.length,...(data||[]).map(function(r){
+      return {id:r.id,name:r.name,role:r.role_title,phone:r.phone||'',
+        status:r.status==='inactive'?'Inactive':'Active'};
+    }));
+  }catch(error){
+    console.error('Employee load failed:',error);
+    toast('Employees could not load. Check database access.');
+  }
+  if(currentPage==='employees')renderPage();
+}
+async function deleteEmployeeFromDatabase(id){
+  const client=window.MA_SUPABASE, store=window.MA_STORE;
+  if(!client||!store||store.role!=='owner'){toast('Owner access required.');return;}
+  const x=employees.find(function(a){return String(a.id)===String(id);});
+  if(!x||!confirm('Remove employee '+x.name+'?'))return;
+  try{
+    const {data,error}=await client.from('employees').delete()
+      .eq('id',String(id)).eq('store_id',store.id).select('id').maybeSingle();
+    if(error)throw error;
+    if(!data)throw new Error('Employee record not found or access denied.');
+    employees.splice(employees.indexOf(x),1);
+    renderPage();
+    toast('Employee removed.');
+  }catch(error){
+    console.error('Employee delete failed:',error);
+    toast('Could not remove employee. Check owner permissions.');
+  }
+}
+
 function employeesPage(){
- const rows=employees.map(x=>`<tr data-search-row="employees" data-search-text="${e((x.name+' '+x.role+' '+x.phone).toLowerCase())}"><td><div class="product-cell"><div class="person-avatar">${e(x.name.split(' ').map(a=>a[0]).slice(0,2).join(''))}</div><div><strong>${e(x.name)}</strong><small>Staff ID EMP-${x.id}</small></div></div></td><td>${e(x.role)}</td><td>${e(x.phone)}</td><td><span class="badge good">${x.status}</span></td><td><div class="row-actions"><button class="mini-icon" data-action="edit-employee" data-id="${x.id}">${ic('edit')}</button><button class="mini-icon" data-action="delete-employee" data-id="${x.id}">${ic('trash')}</button></div></td></tr>`).join('');
- return head('employees',`<button class="btn primary" data-action="add-employee">${ic('plus')} Add employee</button>`)+`<div class="inline-notice">${ic('info')}<div>Employee records are demo-only. Real employee sign-in, PIN verification, and permissions are intentionally not connected.</div></div><section class="panel">${tablePanel('',`${employees.length} team members`,['Employee','Role','Phone','Status','Actions'],rows,'No employees')}</section>`;
+ const rows=employees.map(x=>`<tr data-search-row="employees" data-search-text="${e((x.name+' '+x.role+' '+x.phone).toLowerCase())}"><td><div class="product-cell"><div class="person-avatar">${e(x.name.split(' ').map(a=>a[0]).slice(0,2).join(''))}</div><div><strong>${e(x.name)}</strong><small>Staff ID EMP-${String(x.id).slice(0,8).toUpperCase()}</small></div></div></td><td>${e(x.role)}</td><td>${e(x.phone)}</td><td><span class="badge good">${x.status}</span></td><td><div class="row-actions"><button class="mini-icon" data-action="edit-employee" data-id="${x.id}">${ic('edit')}</button><button class="mini-icon" data-action="delete-employee" data-id="${x.id}">${ic('trash')}</button></div></td></tr>`).join('');
+ return head('employees',`<button class="btn primary" data-action="add-employee">${ic('plus')} Add employee</button>`)+`<section class="panel">${tablePanel('',`${employees.length} team members`,['Employee','Role','Phone','Status','Actions'],rows,'No employees')}</section>`;
 }
 function purchaseOrdersPage(){
  const rows=purchaseOrders.map(p=>`<tr data-search-row="purchase-orders" data-search-text="${e((p.id+' '+p.supplier+' '+p.status).toLowerCase())}"><td><strong>PO-${p.id}</strong></td><td>${e(p.supplier)}</td><td>${dateShort(p.date)}</td><td>${p.items} products</td><td><strong>${money(p.total)}</strong></td><td>${p.status==='Received'?'<span class="badge good">Received</span>':'<span class="badge warn">Pending</span>'}</td><td><div class="row-actions">${p.status==='Pending'?`<button class="btn small" data-action="receive-po" data-id="${p.id}">${ic('check')} Mark received</button>`:''}<button class="mini-icon" data-action="delete-po" data-id="${p.id}">${ic('trash')}</button></div></td></tr>`).join('');
@@ -216,10 +320,58 @@ function reportsPage(){
  <section class="panel"><div class="panel-head"><div><div class="panel-title">Revenue by category</div><div class="panel-subtitle">Current stock value at retail price</div></div></div><div class="panel-body"><div class="report-list">${cats.map((c,i)=>`<div><div class="report-list-row"><span>${e(c.name)}</span><strong>${money(c.amount)}</strong></div><div class="progress" style="margin-top:8px"><span style="width:${Math.min(100,cats.reduce((s,v)=>s+v.amount,0)?c.amount/cats.reduce((s,v)=>s+v.amount,0)*100:0)}%;background:${['var(--accent)','var(--olive)','var(--gold)','var(--surface-3)'][i%4]}"></span></div></div>`).join('')}</div></div></section></div>
  <div class="two-col"><section class="panel"><div class="panel-head"><div><div class="panel-title">Payment breakdown</div><div class="panel-subtitle">By checkout method</div></div></div><div class="panel-body"><div class="report-list">${['Cash','Card','Credit'].map((method,i)=>{const n=sales.filter(s=>s.payment===method).reduce((sum,s)=>sum+s.total,0);return `<div><div class="report-list-row"><span>${method}</span><strong>${money(n)}</strong></div><div class="progress" style="margin-top:8px"><span style="width:${gross?n/gross*100:0}%;background:${['var(--olive)','var(--accent)','var(--gold)'][i]}"></span></div></div>`}).join('')}</div></div></section><section class="panel"><div class="panel-head"><div><div class="panel-title">Stock alerts</div><div class="panel-subtitle">Items that may need restocking</div></div><button class="btn ghost small" data-nav="inventory">View stock ${ic('arrow',12)}</button></div><div class="panel-body"><div class="sales-list">${products.filter(p=>p.stock<=p.minStock).slice(0,4).map(p=>`<div class="sale-row"><div class="sale-product-icon">${ic('shirt')}</div><div class="sale-meta"><strong>${e(p.name)}</strong><span>${e(p.sku)}</span></div><div class="sale-amount">${p.stock} left<small>Min. ${p.minStock}</small></div></div>`).join('')||'<div class="empty">All items are above minimum stock.</div>'}</div></div></section></div><div class="footer-note">Reports use sample data in this frontend demonstration.</div>`;
 }
+function storeLogoUrl(){
+  const s=window.MA_STORE, c=window.MA_SUPABASE;
+  if(!s?.logo_path||!c?.storage)return '';
+  return c.storage.from('store-logos').getPublicUrl(s.logo_path)?.data?.publicUrl||'';
+}
+function applyStoreBranding(){
+  const s=window.MA_STORE, url=storeLogoUrl();
+  ['.brand-mark','.store-avatar'].forEach(sel=>{
+    const el=document.querySelector(sel);
+    if(!el)return;
+    if(url){
+      const img=document.createElement('img');
+      img.src=url; img.alt=(s?.name||'Store')+' logo';
+      img.style.cssText='width:100%;height:100%;object-fit:contain;border-radius:inherit';
+      el.replaceChildren(img); el.style.overflow='hidden';
+    }else{el.textContent='MA';el.style.overflow='';}
+  });
+  const label=document.querySelector('.store-meta strong');
+  if(label)label.textContent=s?.name||'MA Collection';
+  const type=document.querySelector('.store-meta span');
+  if(type)type.textContent=s?.business_type||'Clothing & garments';
+  const preview=document.querySelector('#storeLogoPreview');
+  if(preview){
+    preview.replaceChildren();
+    if(url){
+      const img=document.createElement('img');
+      img.src=url; img.alt='Current store logo';
+      img.style.cssText='max-width:100%;max-height:100%;object-fit:contain';
+      preview.appendChild(img);
+    }else{
+      const span=document.createElement('span');
+      span.textContent='MA'; preview.appendChild(span);
+    }
+  }
+}
 function settingsPage(){
  const tabs=['Store profile','Sales preferences','Inventory','Appearance','Data & privacy'];
  let panel='';
- if(currentSettingsTab==='Store profile') panel=`<div class="settings-block"><h3>Store details</h3><p>These details appear on receipts and help identify your shop in this workspace.</p><form id="storeSettingsForm"><div class="form-grid"><div><label>Store name</label><input name="storeName" value="MA Collection" required></div><div><label>Business type</label><select name="businessType"><option>Clothing & garments</option><option>Retail boutique</option><option>Accessories</option></select></div><div><label>Phone number</label><input name="phone" value="0300 123 4567"></div><div><label>Currency</label><select name="currency"><option>PKR — Pakistani Rupee</option></select></div><div class="full-span"><label>Store address</label><input name="address" value="Gulberg, Lahore, Pakistan"></div></div><div style="display:flex;justify-content:flex-end;margin-top:17px"><button class="btn primary">Save changes</button></div></form></div><div class="settings-block"><h3>Store preferences</h3><p>Small defaults for your daily counter workflow.</p><div class="switch-row"><div><strong>Show SKU on product list</strong><small>Display internal product codes below item names.</small></div><button class="toggle on" data-action="toggle-setting"><span></span></button></div><div class="switch-row"><div><strong>Warn when stock is low</strong><small>Flag products at or below their minimum quantity.</small></div><button class="toggle on" data-action="toggle-setting"><span></span></button></div></div>`;
+ if(currentSettingsTab==='Store profile') panel=`<div class="settings-block"><h3>Store details</h3><p>These details appear on receipts and help identify your shop in this workspace.</p><form id="storeSettingsForm"><div class="form-grid"><div><label>Store name</label><input name="storeName" value="MA Collection" required></div><div><label>Business type</label><select name="businessType"><option>Clothing & garments</option><option>Retail boutique</option><option>Accessories</option></select></div><div><label>Phone number</label><input name="phone" value="0300 123 4567"></div><div><label>Currency</label><select name="currency"><option>PKR — Pakistani Rupee</option></select></div><div class="full-span"><label>Store address</label><input name="address" value="Gulberg, Lahore, Pakistan"></div></div><div style="display:flex;justify-content:flex-end;margin-top:17px"><button class="btn primary">Save changes</button></div></form></div><div class="settings-block"><h3>Store logo</h3>
+<p>Upload your store logo. PNG, JPEG or WebP; maximum 2 MB.</p>
+<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+  <div id="storeLogoPreview" style="width:104px;height:84px;display:grid;place-items:center;border:1px solid var(--line);border-radius:12px;overflow:hidden"><span>MA</span></div>
+  <div style="display:grid;gap:9px;flex:1;min-width:220px">
+    <label for="storeLogoInput">Choose logo file</label>
+    <input id="storeLogoInput" type="file" accept="image/png,image/jpeg,image/webp">
+    <small>Displayed in sidebar and receipt.</small>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button type="button" class="btn primary" data-action="upload-store-logo">Upload logo</button>
+      <button type="button" class="btn" data-action="remove-store-logo">Remove logo</button>
+    </div>
+  </div>
+</div></div><div class="settings-block"><h3>Store preferences</h3><p>Small defaults for your daily counter workflow.</p><div class="switch-row"><div><strong>Show SKU on product list</strong><small>Display internal product codes below item names.</small></div><button class="toggle on" data-action="toggle-setting"><span></span></button></div><div class="switch-row"><div><strong>Warn when stock is low</strong><small>Flag products at or below their minimum quantity.</small></div><button class="toggle on" data-action="toggle-setting"><span></span></button></div></div>`;
  else if(currentSettingsTab==='Sales preferences') panel=`<div class="settings-block"><h3>Billing defaults</h3><p>Customize how your demo point-of-sale behaves.</p><div class="switch-row"><div><strong>Ask for customer on each sale</strong><small>Walk-in customer is still available.</small></div><button class="toggle on" data-action="toggle-setting"><span></span></button></div><div class="switch-row"><div><strong>Allow discounts</strong><small>Discounts are applied to the bill total in this demo.</small></div><button class="toggle on" data-action="toggle-setting"><span></span></button></div><div class="switch-row"><div><strong>Show receipt after checkout</strong><small>Open a receipt preview when the sale is completed.</small></div><button class="toggle on" data-action="toggle-setting"><span></span></button></div></div>`;
  else if(currentSettingsTab==='Inventory') panel=`<div class="settings-block"><h3>Stock management</h3><p>Manage the default behavior for your clothing inventory.</p><div class="form-grid"><div><label>Default minimum stock</label><input type="number" min="0" value="5" id="defaultMinStock"></div><div><label>Stock unit</label><select><option>Pieces</option><option>Sets</option><option>Bundles</option></select></div></div><div class="switch-row"><div><strong>Allow negative inventory</strong><small>Not recommended: stock cannot go below zero in this demo.</small></div><button class="toggle" data-action="toggle-setting"><span></span></button></div><div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="btn primary" data-action="save-inventory-settings">Save preferences</button></div></div>`;
  else if(currentSettingsTab==='Appearance') panel=`<div class="settings-block"><h3>Appearance</h3><p>MA Collection uses a calm, light interface with warm neutral accents.</p><div class="switch-row"><div><strong>Dark appearance preview</strong><small>Toggle the preview's color scheme for your environment.</small></div><button class="toggle ${themeDark?'on':''}" data-action="toggle-theme"><span></span></button></div><div class="switch-row"><div><strong>Compact tables</strong><small>Keep lists dense for quicker scanning.</small></div><button class="toggle" data-action="toggle-setting"><span></span></button></div></div>`;
@@ -227,32 +379,142 @@ function settingsPage(){
  return head('settings')+`<div class="settings-layout"><section class="panel settings-nav">${tabs.map(t=>`<button class="${currentSettingsTab===t?'active':''}" data-action="settings-tab" data-tab="${e(t)}">${ic(t==='Store profile'?'user':t==='Sales preferences'?'receipt':t==='Inventory'?'layers':t==='Appearance'?'spark':'info')}${e(t)}</button>`).join('')}</section><section class="panel"><div class="panel-head"><div><div class="panel-title">${e(currentSettingsTab)}</div><div class="panel-subtitle">Workspace configuration</div></div></div>${panel}</section></div>`;
 }
 function renderPage(){
+  applyStoreBranding();
+  if (!currentRole()) { $('#navContainer').innerHTML=''; $('#mobileBottom').innerHTML=''; $('#pageContent').innerHTML=''; return; }
+ if (!canAccessPage(currentPage)) currentPage = ROLE_PAGE_ACCESS[currentRole()][0];
+ try { sessionStorage.setItem('maCollectionCurrentPage', currentPage); } catch (_) {}
  renderNav();
  const titles=pageMeta[currentPage]||pageMeta.dashboard; $('#topTitle').textContent=titles[0];
  const pages={dashboard:dashboardPage,billing:billingPage,sales:salesPage,products:productsPage,inventory:inventoryPage,categories:categoriesPage,customers:customersPage,suppliers:suppliersPage,employees:employeesPage,'purchase-orders':purchaseOrdersPage,expenses:expensesPage,reports:reportsPage,settings:settingsPage};
  $('#pageContent').innerHTML=(pages[currentPage]||dashboardPage)();
+ const profileForm=$('#storeSettingsForm');
+ if(profileForm && window.MA_STORE) {
+   const f=profileForm.elements;
+   if(f.storeName) f.storeName.value=window.MA_STORE.name || '';
+   if(f.businessType) f.businessType.value=window.MA_STORE.business_type || 'Clothing & garments';
+   if(f.phone) f.phone.value=window.MA_STORE.phone || '';
+   if(f.address) f.address.value=window.MA_STORE.address || '';
+ }
+  applyStoreBranding();
+  hideForbiddenActions($('#pageContent'));
  $('#globalSearch').value='';
  document.title='MA Collection — '+titles[0];
 }
-function navigate(page){if(!pageMeta[page]) return;currentPage=page;closeMenu();renderPage();window.scrollTo({top:0,behavior:'smooth'});}
+function navigate(page){if(!pageMeta[page]) return;if(!canAccessPage(page)){toast('You do not have permission to open this page.');return;}currentPage=page;try{sessionStorage.setItem('maCollectionCurrentPage',page);}catch(_){}closeMenu();renderPage();window.scrollTo({top:0,behavior:'smooth'});}
 function toast(message){const n=document.createElement('div');n.className='toast';n.innerHTML=`<span class="toast-mark">✓</span><span>${e(message)}</span>`;$('#toastWrap').appendChild(n);setTimeout(()=>n.remove(),2800);}
 function showModal(title,subtitle,body,opts={}){$('#modalHost').innerHTML=`<div class="modal-backdrop" data-action="backdrop-close"><section class="modal ${opts.wide?'wide':''}" role="dialog" aria-modal="true" aria-label="${e(title)}"><div class="modal-head"><div><h2>${e(title)}</h2><p>${e(subtitle||'')}</p></div><button class="modal-close" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body">${body}</div>${opts.footer===false?'':`<div class="modal-foot">${opts.cancel===false?'':`<button class="btn" data-action="close-modal">Cancel</button>`}${opts.submit?`<button class="btn primary" data-action="modal-submit" data-submit-form="${opts.formId||'modalForm'}">${opts.submit}</button>`:''}</div>`}</section></div>`; const inp=$('input,select,textarea',$('#modalHost')); if(inp) inp.focus();}
 function closeModal(){$('#modalHost').innerHTML='';}
 function closeMenu(){$('#sidebar').classList.remove('open');$('#mobileOverlay').classList.remove('show');}
 function toggleMenu(){const open=!$('#sidebar').classList.contains('open');$('#sidebar').classList.toggle('open',open);$('#mobileOverlay').classList.toggle('show',open);}
-function findById(list,id){return list.find(x=>x.id===Number(id));}
+function findById(list,id){return list.find(x=>String(x.id)===String(id));}
 function field(label,name,value='',type='text',required=false,placeholder=''){return `<div><label>${e(label)}${required?' <span class="required">*</span>':''}</label><input name="${e(name)}" type="${type}" value="${e(value)}" ${required?'required':''} placeholder="${e(placeholder)}"></div>`;}
 function selectField(label,name,options,current){return `<div><label>${e(label)}</label><select name="${e(name)}">${options.map(v=>`<option ${v===current?'selected':''}>${e(v)}</option>`).join('')}</select></div>`;}
-function productForm(p={}){const edit=!!p.id;showModal(edit?'Edit product':'Add new product',edit?'Update details for this catalog item.':'Add an item to the MA Collection catalog.',`<form id="modalForm" data-form="product"><input type="hidden" name="id" value="${p.id||''}"><div class="form-grid">${field('Product name','name',p.name||'','text',true,'e.g. Embroidered Lawn Suit')}${field('SKU / item code','sku',p.sku||`MA-${1000+products.length+1}`,'text',true)}${selectField('Category','category',categories.map(c=>c.name),p.category||categories[0]?.name||'Unstitched')}${field('Retail price (PKR)','price',p.price??'','number',true,'0')}${field('Cost price (PKR)','cost',p.cost??'','number',true,'0')}${field('Stock quantity','stock',p.stock??'','number',true,'0')}${field('Minimum stock alert','minStock',p.minStock??5,'number',true,'5')}${field('Color / variant','color',p.color||'','text',false,'e.g. Olive')}${field('Size / fit','size',p.size||'','text',false,'S / M / L')}${`<div class="full-span"><label>Notes</label><textarea name="notes" placeholder="Optional product details"></textarea></div>`}</div></form>`,{formId:'modalForm',submit:edit?'Save changes':'Add product'});}
-function customerForm(c={}){const edit=!!c.id;showModal(edit?'Edit customer':'Add customer',edit?'Update customer contact details.':'Add a customer to the directory.',`<form id="modalForm" data-form="customer"><input type="hidden" name="id" value="${c.id||''}"><div class="form-grid">${field('Full name','name',c.name||'','text',true,'Customer name')}${field('Phone number','phone',c.phone||'','tel',true,'03xx xxxxxxx')}${field('Email','email',c.email||'','email',false,'name@email.com')}${field('Khata balance (PKR)','balance',c.balance??0,'number',true,'0')}</div></form>`,{submit:edit?'Save changes':'Add customer'});}
+async function loadProductsFromDatabase(){
+  const client=window.MA_SUPABASE, store=window.MA_STORE;
+  if(!client||!store||!store.id)return;
+
+  try{
+    const {data:categoryRows,error:categoryError}=await client
+      .from('categories').select('id,name,description')
+      .eq('store_id',store.id).order('name',{ascending:true});
+    if(categoryError)throw categoryError;
+
+    const dbCategories=Array.isArray(categoryRows)?categoryRows:[];
+    if(dbCategories.length){
+      categories.splice(0,categories.length,...dbCategories.map(c=>({
+        id:c.id,name:c.name,description:c.description||'',count:0
+      })));
+    }
+
+    const {data:rows,error:productsError}=await client
+      .from('products')
+      .select('id,store_id,category_id,name,sku,price,stock_quantity,min_stock,color,size,is_active,created_at')
+      .eq('store_id',store.id).eq('is_active',true)
+      .order('created_at',{ascending:false});
+    if(productsError)throw productsError;
+
+    const costMap=new Map();
+    if(['owner','manager'].includes(store.role)){
+      const {data:costRows,error:costError}=await client.rpc('get_product_costs',{
+        p_requested_store_id:store.id
+      });
+      if(costError)console.warn('Product costs unavailable; catalog will still load:',costError);
+      (costRows||[]).forEach(c=>costMap.set(String(c.id),Number(c.cost)||0));
+    }
+
+    const categoryNames=new Map(dbCategories.map(c=>[String(c.id),c.name]));
+    const loaded=(rows||[]).map(r=>({
+      id:r.id,
+      name:r.name,
+      sku:r.sku||'',
+      category:categoryNames.get(String(r.category_id))||'Uncategorized',
+      price:Number(r.price),
+      cost:costMap.get(String(r.id))||0,
+      stock:Number(r.stock_quantity),
+      minStock:Number(r.min_stock),
+      color:r.color||'',
+      size:r.size||''
+    }));
+
+    loaded.forEach(p=>{
+      if(!categories.some(c=>c.name===p.category)){
+        categories.push({name:p.category,description:'',count:0});
+      }
+    });
+
+    products.splice(0,products.length,...loaded);
+    categories.forEach(c=>c.count=products.filter(p=>p.category===c.name).length);
+    renderPage();
+    console.log('Products loaded from Supabase:',products.length);
+  }catch(error){
+    console.error('Products database load failed:',error);
+    products.splice(0,products.length);
+    categories.forEach(c=>c.count=0);
+    renderPage();
+    toast('Products could not load from database. Check console and database permissions.');
+  }
+}
+
+async function archiveProductFromDatabase(p){
+  if(!confirm('Remove '+p.name+' from the active catalog? Sales history will be retained.'))return;
+  const client=window.MA_SUPABASE, store=window.MA_STORE;
+  if(!client||!store||!store.id){toast('Database connection is not ready.');return;}
+  if(!['owner','manager'].includes(store.role)){toast('Owner or manager access required.');return;}
+
+  try{
+    const {error}=await client.rpc('archive_product',{
+      p_store_id:store.id,
+      p_product_id:p.id
+    });
+    if(error)throw error;
+
+    const index=products.findIndex(x=>String(x.id)===String(p.id));
+    if(index>=0)products.splice(index,1);
+    categories.forEach(c=>c.count=products.filter(x=>x.category===c.name).length);
+    renderPage();
+    toast('Product removed from the active catalog.');
+  }catch(error){
+    console.error('Product archive failed:',error);
+    toast('Could not remove product: '+(error.message||'Database error'));
+  }
+}
+function generateSku(){
+  let sku;
+  do {
+    sku='MA-'+Date.now().toString(36).toUpperCase()+'-'+Math.random().toString(36).slice(2,6).toUpperCase();
+  } while(products.some(p=>String(p.sku).toLowerCase()===sku.toLowerCase()));
+  return sku;
+}
+function productForm(p={}){const edit=!!p.id;showModal(edit?'Edit product':'Add new product',edit?'Update details for this catalog item.':'Add an item to the MA Collection catalog.',`<form id="modalForm" data-form="product"><input type="hidden" name="id" value="${p.id||''}"><div class="form-grid">${field('Product name','name',p.name||'','text',true,'e.g. Embroidered Lawn Suit')}${field('SKU / item code','sku',p.sku||generateSku(),'text',true)}${selectField('Category','category',categories.map(c=>c.name),p.category||categories[0]?.name||'Unstitched')}${field('Retail price (PKR)','price',p.price??'','number',true,'0')}${field('Cost price (PKR)','cost',p.cost??'','number',true,'0')}${field('Stock quantity','stock',p.stock??'','number',true,'0')}${field('Minimum stock alert','minStock',p.minStock??5,'number',true,'5')}${field('Color / variant','color',p.color||'','text',false,'e.g. Olive')}${field('Size / fit','size',p.size||'','text',false,'S / M / L')}${`<div class="full-span"><label>Notes</label><textarea name="notes" placeholder="Optional product details"></textarea></div>`}</div></form>`,{formId:'modalForm',submit:edit?'Save changes':'Add product'});}
+function customerForm(c={}){const edit=!!c.id;showModal(edit?'Edit customer':'Add customer',edit?'Update customer contact details.':'Add a customer to the directory.',`<form id="modalForm" data-form="customer"><input type="hidden" name="id" value="${c.id||''}"><div class="form-grid">${field('Full name','name',c.name||'','text',true,'Customer name')}${field('Phone number','phone',c.phone||'','tel',true,'03xx xxxxxxx')}${field('Email','email',c.email||'','email',false,'name@email.com')}${currentRole()==='cashier'?'':field('Khata balance (PKR)','balance',c.balance??0,'number',true,'0')}</div></form>`,{submit:edit?'Save changes':'Add customer'});}
 function khataPaymentForm(c){showModal('Record Khata payment',`Outstanding balance: ${money(c.balance)}`,`<form id="modalForm" data-form="khata-payment"><input type="hidden" name="customerId" value="${c.id}"><div class="form-grid">${field('Customer','customerName',c.name,'text',true)}${field('Payment received (PKR)','amount',c.balance,'number',true,'Amount received')}<div class="full-span">${field('Note','note','','text',false,'Cash received, bank transfer, etc.')}</div></div><p class="page-desc">This reduces the customer's outstanding Khata balance and adds a ledger entry.</p></form>`,{submit:'Record payment'});}
 function supplierForm(s={}){const edit=!!s.id;showModal(edit?'Edit supplier':'Add supplier',edit?'Update vendor details.':'Keep your fabric and merchandise vendors organized.',`<form id="modalForm" data-form="supplier"><input type="hidden" name="id" value="${s.id||''}"><div class="form-grid">${field('Supplier name','name',s.name||'','text',true,'Business name')}${field('Contact person','contact',s.contact||'','text',true,'Contact name')}${field('Phone number','phone',s.phone||'','tel',true,'03xx xxxxxxx')}${field('Category','category',s.category||'','text',true,'e.g. Fabric & unstitched')}${field('Outstanding balance (PKR)','balance',s.balance??0,'number',true,'0')}</div></form>`,{submit:edit?'Save changes':'Add supplier'});}
 function expenseForm(x={}){const edit=!!x.id;showModal(edit?'Edit expense':'Add expense',edit?'Update this cost entry.':'Record a cost for your shop.',`<form id="modalForm" data-form="expense"><input type="hidden" name="id" value="${x.id||''}"><div class="form-grid">${field('Expense title','title',x.title||'','text',true,'e.g. Packaging supplies')}${selectField('Category','category',['Rent','Utilities','Supplies','Transport','Salaries','Other'],x.category||'Supplies')}${field('Amount (PKR)','amount',x.amount??'','number',true,'0')}${field('Date','date',x.date||todayIso(),'date',true)}<div class="full-span">${field('Note','note',x.note||'','text',false,'Optional note')}</div></div></form>`,{submit:edit?'Save changes':'Add expense'});}
-function employeeForm(x={}){const edit=!!x.id;showModal(edit?'Edit employee':'Add employee',edit?'Update team member details.':'Add a team member to the demo directory.',`<form id="modalForm" data-form="employee"><input type="hidden" name="id" value="${x.id||''}"><div class="form-grid">${field('Full name','name',x.name||'','text',true,'Team member name')}${field('Role','role',x.role||'Sales assistant','text',true,'Sales assistant')}${field('Phone number','phone',x.phone||'','tel',true,'03xx xxxxxxx')}${selectField('Status','status',['Active','Inactive'],x.status||'Active')}</div></form>`,{submit:edit?'Save changes':'Add employee'});}
+function employeeForm(x={}){const edit=!!x.id;showModal(edit?'Edit employee':'Add employee',edit?'Update team member details.':'Add a team member to your store directory.',`<form id="modalForm" data-form="employee"><input type="hidden" name="id" value="${x.id||''}"><div class="form-grid">${field('Full name','name',x.name||'','text',true,'Team member name')}${field('Role','role',x.role||'Sales assistant','text',true,'Sales assistant')}${field('Phone number','phone',x.phone||'','tel',true,'03xx xxxxxxx')}${selectField('Status','status',['Active','Inactive'],x.status||'Active')}</div></form>`,{submit:edit?'Save changes':'Add employee'});}
 function categoryForm(name=''){const old=categories.find(c=>c.name===name);showModal(old?'Edit category':'Add category',old?'Update category name and description.':'Create a category for your catalog.',`<form id="modalForm" data-form="category"><input type="hidden" name="oldName" value="${e(old?.name||'')}"><div class="form-grid">${field('Category name','name',old?.name||'','text',true,'e.g. Formal wear')}<div class="full-span">${field('Description','description',old?.description||'','text',false,'What items belong here?')}</div></div></form>`,{submit:old?'Save changes':'Add category'});}
 function poForm(){showModal('Create purchase order','Prepare a supplier replenishment order.',`<form id="modalForm" data-form="po"><div class="form-grid">${selectField('Supplier','supplier',suppliers.map(s=>s.name),suppliers[0]?.name||'')}${field('Order date','date',todayIso(),'date',true)}${field('Number of products','items','1','number',true)}${field('Order total (PKR)','total','','number',true,'0')}</div></form>`,{submit:'Create order'});}
 function openReceipt(s){lastReceipt=s;showModal('Sale receipt',`Receipt #${s.id} · ${dateTime(s.date)}`,receiptMarkup(s),{wide:false,footer:true,submit:'Print receipt'});}
-function receiptMarkup(s){return `<div class="receipt"><div class="receipt-brand">MA Collection</div><div class="receipt-sub">Clothing & garments · Lahore, Pakistan</div><div class="receipt-divider"></div><div class="receipt-line"><span>Receipt</span><strong>#${s.id}</strong></div><div class="receipt-line"><span>Date</span><span>${dateTime(s.date)}</span></div><div class="receipt-line"><span>Customer</span><span>${e(s.customer)}</span></div><div class="receipt-divider"></div>${s.items.map(i=>`<div class="receipt-line"><span>${e(i.name)} × ${i.qty}</span><span>${money(i.price*i.qty)}</span></div>`).join('')}<div class="receipt-divider"></div><div class="receipt-line total"><span>Total</span><strong>${money(s.total)}</strong></div><div class="receipt-line"><span>Payment method</span><span>${e(s.payment)}</span></div><div class="receipt-divider"></div><div style="font-size:10px;color:var(--muted);line-height:1.5">Thank you for shopping with us!<br>We hope to see you again.</div><div style="font-size:9px;color:var(--muted);margin-top:15px">Demo receipt · No payment was processed</div></div>`;}
+function receiptMarkup(s){return `<div class="receipt"><div class="receipt-brand">${e(window.MA_STORE?.name || 'MA Collection')}</div><div class="receipt-sub">Clothing & garments · Lahore, Pakistan</div><div class="receipt-divider"></div><div class="receipt-line"><span>Receipt</span><strong>#${s.id}</strong></div><div class="receipt-line"><span>Date</span><span>${dateTime(s.date)}</span></div><div class="receipt-line"><span>Customer</span><span>${e(s.customer)}</span></div><div class="receipt-divider"></div>${s.items.map(i=>`<div class="receipt-line"><span>${e(i.name)} × ${i.qty}</span><span>${money(i.price*i.qty)}</span></div>`).join('')}<div class="receipt-divider"></div><div class="receipt-line total"><span>Total</span><strong>${money(s.total)}</strong></div><div class="receipt-line"><span>Payment method</span><span>${e(s.payment)}</span></div><div class="receipt-divider"></div><div style="font-size:10px;color:var(--muted);line-height:1.5">Thank you for shopping with us!<br>We hope to see you again.</div><div style="font-size:9px;color:var(--muted);margin-top:15px">Demo receipt · No payment was processed</div></div>`;}
 function doExport(type){let data=[], filename=`ma-collection-${type}-${todayIso()}.csv`;
  if(type==='products'||type==='inventory') {data=[['SKU','Name','Category','Retail Price','Cost Price','Stock','Minimum Stock'],...products.map(p=>[p.sku,p.name,p.category,p.price,p.cost,p.stock,p.minStock])];}
  else if(type==='sales'||type==='report'||type==='dashboard') {data=[['Receipt','Customer','Date','Items','Payment','Total','Status','Profit'],...sales.map(s=>[s.id,s.customer,s.date,s.items.reduce((a,x)=>a+x.qty,0),s.payment,s.total,s.status,s.profit])];}
@@ -261,17 +523,60 @@ function doExport(type){let data=[], filename=`ma-collection-${type}-${todayIso(
  else if(type==='expenses'){data=[['Title','Category','Date','Amount','Note'],...expenses.map(x=>[x.title,x.category,x.date,x.amount,x.note])];}
  const csv=data.map(row=>row.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\r\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8;'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);toast(`${type[0].toUpperCase()+type.slice(1)} export prepared.`);}
 function resetDemo(){location.reload();}
-function handleFormSubmit(form){
+async function handleFormSubmit(form){
+  if (!canSubmitForm(form)) { toast('You do not have permission to save this record.'); return; }
  const customSelects=Array.from(form.querySelectorAll('select[data-custom-select]')).filter(select=>select.value==='__custom_option__');if(customSelects.some(select=>!String(select.parentElement.querySelector('[data-custom-select-input]')?.value||'').trim())){toast('Type your own value before saving.');return;}customSelects.forEach(select=>{const input=select.parentElement.querySelector('[data-custom-select-input]'),value=String(input.value).trim();let option=Array.from(select.options).find(o=>o.value===value);if(!option){option=new Option(value,value);select.add(option);}select.value=value;});
- const fd=new FormData(form), d=Object.fromEntries(fd.entries()), id=Number(d.id||0);
+ const fd=new FormData(form), d=Object.fromEntries(fd.entries()), rawId=String(d.id||''), id=rawId ? (Number.isFinite(Number(rawId))?Number(rawId):rawId) : 0;
  if(form.dataset.form==='product'){
-   const p={id:id||Math.max(1000,...products.map(x=>x.id))+1,name:d.name.trim(),sku:d.sku.trim(),category:d.category,price:Number(d.price),cost:Number(d.cost),stock:Number(d.stock),minStock:Number(d.minStock),color:d.color.trim(),size:d.size.trim()};
-   if(!p.name||!p.sku||p.price<1||![p.price,p.cost,p.stock,p.minStock].every(v=>Number.isSafeInteger(v)&&v>=0)){toast('Enter a product price above zero and valid non-negative whole numbers for cost and stock.');return;}
-   const duplicate=products.some(x=>x.sku.toLowerCase()===p.sku.toLowerCase()&&x.id!==id);if(duplicate){toast('That SKU is already in use.');return;}if(!p.category.trim()){toast('Select a category or type your own.');return;}if(!categories.some(c=>c.name.toLowerCase()===p.category.toLowerCase()))categories.push({name:p.category,description:'Custom category',count:0});
-   if(id){products[products.findIndex(x=>x.id===id)]=p;toast('Product updated.');}else{products.unshift(p);toast('Product added to catalog.');}
-   categories.forEach(c=>c.count=products.filter(p=>p.category===c.name).length);closeModal();renderPage();
+   const p={id:id||null,name:d.name.trim(),sku:d.sku.trim(),category:d.category,price:Number(d.price),cost:Number(d.cost),stock:Number(d.stock),minStock:Number(d.minStock),color:(d.color||'').trim(),size:(d.size||'').trim()};
+   if(!p.name||!p.sku||p.price<1||![p.price,p.cost,p.stock,p.minStock].every(v=>Number.isSafeInteger(v)&&v>=0)){toast('Enter a product name, SKU, valid price, cost and stock quantities.');return;}
+   const duplicate=products.some(x=>String(x.sku).toLowerCase()===p.sku.toLowerCase()&&String(x.id)!==String(id));
+   if(duplicate){toast('That SKU is already in use.');return;}
+   if(!p.category||!p.category.trim()){toast('Select a product category.');return;}
+
+   const client=window.MA_SUPABASE, store=window.MA_STORE;
+   if(!client||!store||!store.id){toast('Supabase connection is not ready.');return;}
+   if(!['owner','manager'].includes(store.role)){toast('Owner or manager access required to save products.');return;}
+
+   try{
+     const {data,error}=await client.rpc('save_product',{
+       p_store_id:store.id,
+       p_product_id:id||null,
+       p_name:p.name,
+       p_sku:p.sku,
+       p_category:p.category,
+       p_price:p.price,
+       p_cost:p.cost,
+       p_stock_quantity:p.stock,
+       p_min_stock:p.minStock,
+       p_color:p.color||null,
+       p_size:p.size||null
+     });
+     if(error)throw error;
+     const savedId=typeof data==='string'?data:(Array.isArray(data)?data[0]:(data&&(data.save_product||data.id)));
+     if(!savedId)throw new Error('The database did not return a product ID.');
+     p.id=savedId;
+
+     if(!categories.some(c=>c.name.toLowerCase()===p.category.toLowerCase())){
+       categories.push({name:p.category,description:'',count:0});
+     }
+     if(id){
+       const index=products.findIndex(x=>String(x.id)===String(id));
+       if(index>=0)products[index]=p;else products.unshift(p);
+       toast('Product updated and saved to database.');
+     }else{
+       products.unshift(p);
+       toast('Product saved to database.');
+     }
+     categories.forEach(c=>c.count=products.filter(x=>x.category===c.name).length);
+     closeModal();
+     renderPage();
+   }catch(error){
+     console.error('Product save failed:',error);
+     const errorMessage=String(error?.message||''); if(error?.code==='23505'||/products_store_sku_uidx|duplicate key/i.test(errorMessage)){toast('This SKU already exists in this store. Choose a different SKU.');}else{toast('Product save failed: '+(errorMessage||'Check database permissions.'));}
+   }
  } else if(form.dataset.form==='customer'){
-   const c={id:id||Math.max(200,...customers.map(x=>x.id))+1,name:d.name.trim(),phone:normalizePakPhone(d.phone),email:d.email.trim(),balance:Number(d.balance),orders:findById(customers,id)?.orders||0,joined:findById(customers,id)?.joined||todayIso()};if(!c.name||!/^923\d{9}$/.test(c.phone)||!Number.isSafeInteger(c.balance)||c.balance<0){toast('Enter a name, valid Pakistani mobile number, and non-negative whole-number Khata balance.');return;}if(id){customers[customers.findIndex(x=>x.id===id)]=c;toast('Customer updated.');}else{customers.unshift(c);toast('Customer added.');}closeModal();renderPage();
+   const c={id:id||Math.max(200,...customers.map(x=>x.id))+1,name:d.name.trim(),phone:normalizePakPhone(d.phone),email:d.email.trim(),balance:currentRole()==='cashier'?(findById(customers,id)?.balance??0):Number(d.balance),orders:findById(customers,id)?.orders||0,joined:findById(customers,id)?.joined||todayIso()};if(!c.name||!/^923\d{9}$/.test(c.phone)||!Number.isSafeInteger(c.balance)||c.balance<0){toast('Enter a name, valid Pakistani mobile number, and non-negative whole-number Khata balance.');return;}if(id){customers[customers.findIndex(x=>x.id===id)]=c;toast('Customer updated.');}else{customers.unshift(c);toast('Customer added.');}closeModal();renderPage();
  } else if(form.dataset.form==='khata-payment'){
    const customerId=Number(d.customerId),c=findById(customers,customerId);let amount;try{amount=toSafeWholeNumber(d.amount,'Payment amount');}catch(error){toast(error.message);return;}if(!c||amount<1||amount>c.balance){toast('Payment must be greater than zero and cannot exceed the outstanding balance.');return;}c.balance-=amount;khataLedger.unshift({id:Date.now(),customerId:c.id,customer:c.name,type:'payment',amount,date:new Date().toISOString(),note:String(d.note||'').trim()});closeModal();persistState();renderPage();toast('Khata payment recorded.');
  } else if(form.dataset.form==='supplier'){
@@ -279,19 +584,182 @@ function handleFormSubmit(form){
  } else if(form.dataset.form==='expense'){
    const x={id:id||Math.max(500,...expenses.map(a=>a.id))+1,title:d.title.trim(),category:d.category,amount:Number(d.amount),date:d.date,note:d.note.trim()};if(!x.title||!Number.isSafeInteger(x.amount)||x.amount<0){toast('Enter an expense title and non-negative whole-number amount.');return;}if(id){expenses[expenses.findIndex(a=>a.id===id)]=x;toast('Expense updated.');}else{expenses.unshift(x);toast('Expense recorded.');}closeModal();renderPage();
  } else if(form.dataset.form==='employee'){
-   const x={id:id||Math.max(400,...employees.map(a=>a.id))+1,name:d.name.trim(),role:d.role.trim(),phone:d.phone.trim(),status:d.status};if(!x.name||!x.phone){toast('Please complete employee details.');return;}if(id){employees[employees.findIndex(a=>a.id===id)]=x;toast('Employee updated.');}else{employees.unshift(x);toast('Employee added.');}closeModal();renderPage();
- } else if(form.dataset.form==='category'){
+  const client=window.MA_SUPABASE, store=window.MA_STORE;
+  if(!client||!store||!store.id||store.role!=='owner'){
+    toast('Only the shop owner can manage employees.');return;
+  }
+  const employeeId=String(d.id||'').trim();
+  const name=String(d.name||'').trim();
+  const roleTitle=String(d.role||'').trim();
+  const phone=String(d.phone||'').trim();
+  const status=String(d.status||'Active');
+  if(!name||name.length>120||!roleTitle||roleTitle.length>80||
+     phone.length>30||!['Active','Inactive'].includes(status)){
+    toast('Check the employee details and try again.');return;
+  }
+  try{
+    const payload={name:name,role_title:roleTitle,phone:phone||null,status:status.toLowerCase()};
+    let result;
+    if(employeeId){
+      result=await client.from('employees').update(payload)
+        .eq('id',employeeId).eq('store_id',store.id)
+        .select('id,name,role_title,phone,status').maybeSingle();
+    }else{
+      result=await client.from('employees').insert({...payload,store_id:store.id})
+        .select('id,name,role_title,phone,status').single();
+    }
+    if(result.error)throw result.error;
+    if(!result.data)throw new Error('No employee row returned; check Owner access.');
+    const r=result.data;
+    const saved={id:r.id,name:r.name,role:r.role_title,phone:r.phone||'',
+      status:r.status==='inactive'?'Inactive':'Active'};
+    const index=employees.findIndex(function(a){return String(a.id)===String(saved.id);});
+    if(index>=0)employees[index]=saved;else employees.unshift(saved);
+    closeModal();renderPage();
+    toast(employeeId?'Employee updated in database.':'Employee saved to database.');
+  }catch(error){
+    console.error('Employee save failed:',error);
+    toast('Could not save employee. Check connection and Owner permissions.');
+  }
+  } else if(form.dataset.form==='category'){
    const old=d.oldName;const name=d.name.trim();if(!name){toast('Enter a category name.');return;}if(categories.some(c=>c.name.toLowerCase()===name.toLowerCase()&&c.name!==old)){toast('A category with this name already exists.');return;}if(old){const c=categories.find(c=>c.name===old);if(c){c.name=name;c.description=d.description;products.forEach(p=>{if(p.category===old)p.category=name;});}toast('Category updated.');}else{categories.push({name,description:d.description||'New product category',count:0});toast('Category created.');}closeModal();renderPage();
  } else if(form.dataset.form==='po'){
    const p={id:Math.max(700,...purchaseOrders.map(x=>x.id))+1,supplier:d.supplier,date:d.date,items:Number(d.items),total:Number(d.total),status:'Pending'};if(!Number.isSafeInteger(p.items)||p.items<1||!Number.isSafeInteger(p.total)||p.total<0){toast('Enter a positive whole-number item count and non-negative whole-number order total.');return;}purchaseOrders.unshift(p);closeModal();renderPage();toast('Purchase order created.');
- } else if(form.id==='storeSettingsForm'){toast('Store profile saved for this demo session.');}
+ } else if(form.id==='storeSettingsForm'){
+   const client=window.MA_SUPABASE;
+   const store=window.MA_STORE;
+   if(!client || !store || !store.id || store.role!=='owner'){
+     toast('Only the shop owner can save store details.');
+     return;
+   }
+
+   const name=String(d.storeName||'').trim();
+   const businessType=String(d.businessType||'');
+   const phone=String(d.phone||'').trim();
+   const address=String(d.address||'').trim();
+
+   if(!name || name.length>120 ||
+      !['Clothing & garments','Retail boutique','Accessories'].includes(businessType) ||
+      phone.length>30 || address.length>300){
+     toast('Please check the store details and try again.');
+     return;
+   }
+
+   try{
+     const {data,error}=await client.from('stores')
+       .update({
+         name,
+         business_type:businessType,
+         phone:phone||null,
+         address:address||null
+       })
+       .eq('id',store.id)
+       .select('id,name,business_type,phone,address')
+       .maybeSingle();
+
+     if(error) throw error;
+     if(!data){
+       toast('Store profile was not updated. Check owner access and database permissions.');
+       return;
+     }
+
+     Object.assign(store,{
+       name:data.name,
+       business_type:data.business_type,
+       phone:data.phone||'',
+       address:data.address||''
+     });
+
+     const label=document.querySelector('.store-meta strong');
+     if(label) label.textContent=data.name;
+
+     renderPage();
+     toast('Store profile saved successfully.');
+   }catch(error){
+     console.error('Store profile save failed:',error);
+     toast('Could not save store profile. Check connection and permissions.');
+   }
+ }
 }
-function handleAction(action,target){const id=target.dataset.id, name=target.dataset.name;
+async function uploadStoreLogo(button){
+  const client=window.MA_SUPABASE, store=window.MA_STORE;
+  if(!client?.storage||!store?.id||store.role!=='owner'){
+    toast('Only the shop owner can upload a logo.'); return;
+  }
+  const input=document.querySelector('#storeLogoInput');
+  const file=input?.files?.[0];
+  if(!file){toast('Choose a logo file first.');return;}
+  const types={'image/png':'png','image/jpeg':'jpg','image/webp':'webp'};
+  if(!types[file.type]){toast('Use PNG, JPEG or WebP.');return;}
+  if(file.size<1||file.size>2*1024*1024){toast('Logo must be 2 MB or smaller.');return;}
+
+  const oldPath=store.logo_path||'';
+  const newPath=store.id+'/'+Date.now()+'-logo.'+types[file.type];
+  if(button){button.disabled=true;button.textContent='Uploading...';}
+  let uploaded=false;
+  try{
+    const result=await client.storage.from('store-logos').upload(newPath,file,{
+      cacheControl:'3600',contentType:file.type,upsert:false
+    });
+    if(result.error)throw result.error;
+    uploaded=true;
+
+    const saved=await client.from('stores').update({logo_path:newPath})
+      .eq('id',store.id).select('id,logo_path').maybeSingle();
+    if(saved.error)throw saved.error;
+    if(!saved.data)throw new Error('Logo path was not saved.');
+
+    store.logo_path=saved.data.logo_path||newPath;
+    uploaded=false;
+    if(oldPath){
+      const removed=await client.storage.from('store-logos').remove([oldPath]);
+      if(removed.error)console.warn('Old logo cleanup failed:',removed.error);
+    }
+    if(input)input.value='';
+    renderPage();
+    toast('Store logo uploaded successfully.');
+  }catch(err){
+    console.error('Logo upload failed:',err);
+    if(uploaded)await client.storage.from('store-logos').remove([newPath]);
+    toast('Logo upload failed. Check connection and owner permissions.');
+  }finally{
+    if(button&&button.isConnected){button.disabled=false;button.textContent='Upload logo';}
+    applyStoreBranding();
+  }
+}
+async function removeStoreLogo(button){
+  const client=window.MA_SUPABASE, store=window.MA_STORE;
+  if(!client?.storage||!store?.id||store.role!=='owner'){
+    toast('Only the shop owner can remove a logo.');return;
+  }
+  const oldPath=store.logo_path;
+  if(!oldPath){toast('No logo to remove.');return;}
+  if(!confirm('Remove the store logo?'))return;
+  if(button)button.disabled=true;
+  try{
+    const saved=await client.from('stores').update({logo_path:null})
+      .eq('id',store.id).select('id').maybeSingle();
+    if(saved.error)throw saved.error;
+    if(!saved.data)throw new Error('Logo path was not cleared.');
+    store.logo_path='';
+    renderPage();
+    const removed=await client.storage.from('store-logos').remove([oldPath]);
+    if(removed.error)console.warn('Old logo cleanup failed:',removed.error);
+    toast('Store logo removed.');
+  }catch(err){
+    console.error('Logo removal failed:',err);
+    toast('Could not remove logo. Check owner permissions.');
+  }finally{
+    if(button&&button.isConnected)button.disabled=false;
+    applyStoreBranding();
+  }
+}
+function handleAction(action,target){if(!canPerformAction(action,target)){toast('You do not have permission to perform this action.');return;}const id=target.dataset.id, name=target.dataset.name;
  switch(action){
  case 'toggle-menu':toggleMenu();break;case 'close-menu':if(target.id==='mobileOverlay'||target===target.closest('[data-action="close-menu"]'))closeMenu();break;
  case 'close-modal':closeModal();break;case 'backdrop-close':if(target.classList.contains('modal-backdrop'))closeModal();break;
  case 'modal-submit':{const f=$('#'+target.dataset.submitForm);if(f){if(typeof f.reportValidity==='function'&&!f.reportValidity())break;try{handleFormSubmit(f);}catch(error){console.error('Modal form submission failed:',error);toast('Could not save this record. Check the fields and try again.');}}else if(lastReceipt){window.print();}break;}
- case 'store-switch':currentPage='settings';currentSettingsTab='Store profile';renderPage();break;
+ case 'store-switch':currentPage='settings';currentSettingsTab='Store profile';renderPage();break;case 'upload-store-logo':uploadStoreLogo(target);break;case 'remove-store-logo':removeStoreLogo(target);break;
  case 'help':showModal('Help center','A quick guide for this demo',`<div class="settings-block" style="padding:0 0 14px"><h3>Managing products</h3><p>Use Products to add items and set their prices and stock. Inventory lets you adjust quantities.</p></div><div class="settings-block" style="padding:14px 0"><h3>Billing a sale</h3><p>Open New sale, choose items, select the payment method, and complete the demo checkout.</p></div><div class="settings-block" style="padding:14px 0 0"><h3>Reports</h3><p>Review the sample revenue, stock and payment summaries under Reports & analytics.</p></div>`,{footer:false});break;
  case 'notifications':{const low=products.filter(p=>p.stock===0||(p.minStock>0&&p.stock<=p.minStock));const due=customers.reduce((s,c)=>s+c.balance,0);const latest=sales[0];showModal('Notifications','Current store activity',`${low.length?low.map(p=>`<div class="sale-row"><div class="sale-product-icon">${ic('info')}</div><div class="sale-meta"><strong>${p.stock===0?'Out of stock':'Low stock'}: ${e(p.name)}</strong><span>${p.stock} units available (minimum ${p.minStock}).</span></div><span class="badge warn">Stock</span></div>`).join(''):'<div class="empty">No low-stock alerts.</div>'}<div class="sale-row"><div class="sale-product-icon">${ic('wallet')}</div><div class="sale-meta"><strong>Customer Khata outstanding</strong><span>${money(due)} due across your customers.</span></div></div>${latest?`<div class="sale-row"><div class="sale-product-icon">${ic('receipt')}</div><div class="sale-meta"><strong>Latest sale</strong><span>Receipt #${latest.id} · ${money(latest.total)}</span></div></div>`:'<div class="empty">No sales recorded yet.</div>'}`,{footer:false});break;}
  case 'toggle-theme':themeDark=!themeDark;document.documentElement.style.colorScheme=themeDark?'dark':'light';renderPage();toast(themeDark?'Dark appearance enabled.':'Light appearance enabled.');break;
@@ -299,18 +767,17 @@ function handleAction(action,target){const id=target.dataset.id, name=target.dat
  case 'toggle-setting':target.classList.toggle('on');toast('Preference changed in this demo session.');break;
  case 'save-inventory-settings':toast('Inventory preferences saved.');break;
  case 'reset-demo':if(confirm('Reset sample data and reload the demo?'))resetDemo();break;
- case 'add-product':productForm();break;case 'edit-product':{const p=findById(products,id);if(p)productForm(p);break;}
- case 'delete-product':{const p=findById(products,id);if(p&&confirm(`Delete “${p.name}” from the demo catalog?`)){products.splice(products.indexOf(p),1);categories.forEach(c=>c.count=products.filter(p=>p.category===c.name).length);renderPage();toast('Product deleted.');}break;}
- case 'product-category':productFilter=target.dataset.category;renderPage();break;
+ case 'add-product':productForm();break;case 'edit-product':{const p=products.find(x=>String(x.id)===String(target.dataset.id));if(p)productForm(p);break;}
+ case 'delete-product':{const p=products.find(x=>String(x.id)===String(target.dataset.id));if(p)void archiveProductFromDatabase(p);break;} case 'product-category':productFilter=target.dataset.category;renderPage();break;
  case 'pos-category':categoryFilter=target.dataset.category;renderPage();break;
  case 'add-cart':{const p=findById(products,id);if(!p||p.stock<=0){toast('This item is out of stock.');break;}const it=cart.find(x=>x.id===p.id);if(it){if(it.qty>=p.stock){toast('No more stock available for this item.');break;}it.qty++;}else cart.push({id:p.id,name:p.name,price:p.price,qty:1});renderPage();toast('Added to current bill.');break;}
- case 'cart-qty':{const it=cart.find(x=>x.id===Number(id));if(!it)break;const delta=Number(target.dataset.delta);const p=findById(products,id);if(delta>0&&p&&it.qty>=p.stock){toast('No more stock available.');break;}it.qty+=delta;if(it.qty<=0)cart=cart.filter(x=>x.id!==Number(id));renderPage();break;}
+ case 'cart-qty':{const it=cart.find(x=>x.id===id);if(!it)break;const delta=Number(target.dataset.delta);const p=findById(products,id);if(delta>0&&p&&it.qty>=p.stock){toast('No more stock available.');break;}it.qty+=delta;if(it.qty<=0)cart=cart.filter(x=>x.id!==id);renderPage();break;}
  case 'clear-cart':if(cart.length&&confirm('Clear all items from this bill?')){cart=[];renderPage();toast('Current bill cleared.');}else if(!cart.length)toast('Your bill is already empty.');break;
  case 'checkout':checkout();break;
  case 'share-bill':checkout({share:true});break;
  case 'clear-local-data':if(confirm('Delete all records saved in this browser? This cannot be undone.')){[products,customers,suppliers,employees,sales,expenses,purchaseOrders,khataLedger].forEach(list=>list.splice(0,list.length));categories.splice(0,categories.length,{name:'Unstitched',count:0,description:'Lawn, khaddar, formal suits'},{name:'Ready to wear',count:0,description:'Kurtis, co-ords, trousers'},{name:'Accessories',count:0,description:'Dupattas, clutches, jewellery'},{name:'Seasonal',count:0,description:'Limited-time collections'});cart=[];lastReceipt=null;localStorage.removeItem('maCollectionState');renderPage();toast('Local records cleared.');}break;
- case 'edit-cart-price':{const item=cart.find(x=>x.id===Number(id));if(!item){toast('Cart item not found.');break;}editingCartPriceId=item.id;renderPage();break;}
- case 'save-cart-price':{const item=cart.find(x=>x.id===Number(id)),input=$('[data-cart-price-input="'+id+'"]');if(!item||!input){toast('Could not find this bill item.');break;}try{const price=toSafeWholeNumber(input.value,'Sale price');if(price===0)throw new Error('Sale price must be greater than zero.');item.price=price;editingCartPriceId=null;renderPage();toast('Sale price updated. Catalog price is unchanged.');}catch(error){toast(error.message);}break;}
+ case 'edit-cart-price':{const item=cart.find(x=>x.id===id);if(!item){toast('Cart item not found.');break;}editingCartPriceId=item.id;renderPage();break;}
+ case 'save-cart-price':{const item=cart.find(x=>x.id===id),input=$('[data-cart-price-input="'+id+'"]');if(!item||!input){toast('Could not find this bill item.');break;}try{const price=toSafeWholeNumber(input.value,'Sale price');if(price===0)throw new Error('Sale price must be greater than zero.');item.price=price;editingCartPriceId=null;renderPage();toast('Sale price updated. Catalog price is unchanged.');}catch(error){toast(error.message);}break;}
  case 'cancel-cart-price':editingCartPriceId=null;renderPage();break;
  case 'sales-filter':salesFilter=target.dataset.filter;renderPage();break;
  case 'view-sale':{const s=findById(sales,id);if(s)openReceipt(s);break;}
@@ -323,13 +790,13 @@ function handleAction(action,target){const id=target.dataset.id, name=target.dat
  case 'delete-supplier':{const s=findById(suppliers,id);if(s&&confirm(`Delete supplier ${s.name}?`)){suppliers.splice(suppliers.indexOf(s),1);renderPage();toast('Supplier removed.');}break;}
  case 'add-expense':expenseForm();break;case 'edit-expense':{const x=findById(expenses,id);if(x)expenseForm(x);break;}
  case 'delete-expense':{const x=findById(expenses,id);if(x&&confirm(`Delete expense ${x.title}?`)){expenses.splice(expenses.indexOf(x),1);renderPage();toast('Expense removed.');}break;}
- case 'add-employee':employeeForm();break;case 'edit-employee':{const x=findById(employees,id);if(x)employeeForm(x);break;}
- case 'delete-employee':{const x=findById(employees,id);if(x&&confirm(`Remove employee ${x.name}?`)){employees.splice(employees.indexOf(x),1);renderPage();toast('Employee removed.');}break;}
- case 'add-category':categoryForm();break;case 'edit-category':categoryForm(name);break;
+ case 'add-employee':employeeForm();break;case 'edit-employee':{const x=employees.find(function(a){return String(a.id)===String(id);});if(x)employeeForm(x);break;}
+ case 'delete-employee':{deleteEmployeeFromDatabase(id);break;}
+  case 'add-category':categoryForm();break;case 'edit-category':categoryForm(name);break;
  case 'delete-category':{const c=categories.find(c=>c.name===name);if(!c)break;if(products.some(p=>p.category===name)){toast('Move or edit products in this category before deleting it.');break;}if(confirm(`Delete category ${name}?`)){categories.splice(categories.indexOf(c),1);renderPage();toast('Category deleted.');}break;}
  case 'add-po':poForm();break;case 'receive-po':{const p=findById(purchaseOrders,id);if(p){p.status='Received';renderPage();toast('Purchase order marked received. Add received quantities from Inventory.');}break;}
  case 'delete-po':{const p=findById(purchaseOrders,id);if(p&&confirm(`Delete PO-${p.id}?`)){purchaseOrders.splice(purchaseOrders.indexOf(p),1);renderPage();toast('Purchase order deleted.');}break;}
- case 'adjust-stock':adjustStockForm(Number(id));break;case 'stock-adjustment':adjustStockForm(null);break;
+ case 'adjust-stock':adjustStockForm(id);break;case 'stock-adjustment':adjustStockForm(null);break;
  case 'export-products':doExport('products');break;case 'export-inventory':doExport('inventory');break;case 'export-sales':doExport('sales');break;case 'export-customers':doExport('customers');break;case 'export-suppliers':doExport('suppliers');break;case 'export-expenses':doExport('expenses');break;case 'export-report':doExport('report');break;case 'export-dashboard':doExport('dashboard');break;
  }
 }
@@ -493,6 +960,16 @@ const __originalOpenReceipt=openReceipt;
 openReceipt=function(sale){
   __originalOpenReceipt(sale);
   const receipt=$('#modalHost .receipt');
+  if(receipt){
+    const url=storeLogoUrl();
+    if(url&&!receipt.querySelector('.receipt-logo')){
+      const img=document.createElement('img');
+      img.className='receipt-logo';img.src=url;img.alt='Store logo';
+      img.style.cssText='display:block;max-width:110px;max-height:70px;object-fit:contain;margin:0 auto 10px';
+      const brand=receipt.querySelector('.receipt-brand');
+      if(brand)brand.before(img);else receipt.prepend(img);
+    }
+  }
   if(receipt){const foot=Array.from(receipt.children).find(n=>/demo receipt|no payment was processed/i.test(n.textContent));if(foot)foot.remove();if(sale.phone&&!Array.from(receipt.querySelectorAll('.receipt-line')).some(n=>/Phone/i.test(n.textContent))){const row=document.createElement('div');row.className='receipt-line';row.innerHTML='<span>Phone</span><span>+'+e(normalizePakPhone(sale.phone))+'</span>';const customer=Array.from(receipt.querySelectorAll('.receipt-line')).find(n=>/Customer/i.test(n.textContent));if(customer)customer.after(row);}}
 };
 const __originalCheckout=checkout;
@@ -529,5 +1006,12 @@ document.addEventListener('change',function(ev){
   }
 });
 document.addEventListener('blur',function(ev){if(ev.target&&ev.target.id==='customerPhone'){const normalized=normalizePakPhone(ev.target.value);if(normalized.length>=11)ev.target.value=normalized;}},true);
+window.addEventListener('ma-store-ready', function () {
+  if (window.MA_STORE && currentRole()) {
+    if(currentRole()==='owner') loadEmployeesFromDatabase();
+    renderPage();
+    void loadProductsFromDatabase();
+  }
+});
 renderPage();
 })();

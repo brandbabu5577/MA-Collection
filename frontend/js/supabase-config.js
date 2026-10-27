@@ -7,8 +7,8 @@
 // only ever grants the access that Row Level Security allows for the signed-in
 // user. NEVER put a service-role key in this file (or anywhere in the frontend).
 const supabaseConfig = {
-  url: 'YOUR_SUPABASE_PROJECT_URL', // e.g. https://your-project-ref.supabase.co
-  anonKey: 'YOUR_SUPABASE_ANON_KEY' // publishable / anon public key
+  url: 'https://znjkrldjhlpaciukhtgp.supabase.co', // e.g. https://your-project-ref.supabase.co
+  anonKey: 'sb_publishable_Ny2eShF53g-I0bxUy3eZqQ_XTnXhH4q' // publishable / anon public key
 };
 
 export default supabaseConfig;

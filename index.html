@@ -8,14 +8,15 @@
 <link rel="stylesheet" href="./frontend/css/styles.css">
 </head>
 <body>
-<div id="appRoot">
+<div class="auth-gate" id="authGate" aria-live="polite"></div>
+<div id="appRoot" hidden>
   <aside class="sidebar" id="sidebar">
     <div class="brand"><div class="brand-mark">MA</div><div><div class="brand-name">MA Collection</div><div class="brand-caption">Retail Studio</div></div></div>
     <button class="store-switch" data-action="store-switch"><div class="store-avatar">MA</div><div class="store-meta"><strong>MA Collection</strong><span>Clothing & garments</span></div><span aria-hidden="true">⌄</span></button>
     <div class="nav-scroll" id="navContainer"></div>
     <div class="sidebar-bottom">
       <div class="help-card"><div class="help-icon"><span>✦</span></div><strong>Need a hand?</strong><p>Quick guides to help you keep your shop running smoothly.</p><button class="link-button" data-action="help">Explore help center →</button></div>
-      <div class="user-mini"><div class="user-photo">MA</div><div class="user-info"><strong>Shop Manager</strong><span>Store owner</span></div><button class="mini-icon" data-nav="settings" aria-label="Settings"><span>⋯</span></button></div>
+      <div class="user-mini"><div class="user-photo">MA</div><div class="user-info"><strong>Shop Manager</strong><span>Store owner</span></div><button class="mini-icon" data-nav="settings" aria-label="Settings"><span>⋯</span></button><button class="mini-icon" data-auth-action="logout" aria-label="Sign out" title="Sign out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg></button></div>
     </div>
   </aside>
   <div class="mobile-overlay" id="mobileOverlay" data-action="close-menu"></div>
@@ -32,5 +33,6 @@
 <nav class="mobile-bottom" id="mobileBottom" aria-label="Mobile navigation"></nav>
 <div id="modalHost"></div><div class="toast-wrap" id="toastWrap" aria-live="polite"></div>
 <script src="./frontend/js/app.js" defer></script>
+<script type="module" src="./frontend/js/auth.js"></script>
 </body>
 </html>
