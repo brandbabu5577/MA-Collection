@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#faf9f6">
+<title>MA Collection — Shop Management</title>
+<link rel="stylesheet" href="./frontend/css/styles.css">
+</head>
+<body>
+<div class="auth-gate" id="authGate" aria-live="polite"></div>
+<div id="appRoot" hidden>
+  <aside class="sidebar" id="sidebar">
+    <div class="brand"><div class="brand-mark">MA</div><div><div class="brand-name">MA Collection</div><div class="brand-caption">Retail Studio</div></div></div>
+    <button class="store-switch" data-action="store-switch"><div class="store-avatar">MA</div><div class="store-meta"><strong>MA Collection</strong><span>Clothing & garments</span></div><span aria-hidden="true">⌄</span></button>
+    <div class="nav-scroll" id="navContainer"></div>
+    <div class="sidebar-bottom">
+      <div class="help-card"><div class="help-icon"><span>✦</span></div><strong>Need a hand?</strong><p>Quick guides to help you keep your shop running smoothly.</p><button class="link-button" data-action="help">Explore help center →</button></div>
+      <div class="user-mini"><div class="user-photo">MA</div><div class="user-info"><strong>Shop Manager</strong><span>Store owner</span></div><button class="mini-icon" data-nav="settings" aria-label="Settings"><span>⋯</span></button><button class="mini-icon" data-auth-action="logout" aria-label="Sign out" title="Sign out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg></button></div>
+    </div>
+  </aside>
+  <div class="mobile-overlay" id="mobileOverlay" data-action="close-menu"></div>
+  <section class="main-shell">
+    <header class="topbar">
+      <button class="mobile-menu" data-action="toggle-menu" aria-label="Open navigation"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+      <div class="breadcrumb"><div class="eyebrow">MA COLLECTION / WORKSPACE</div><strong id="topTitle">Overview</strong></div>
+      <div class="top-search"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.5 4.5"/></svg><input id="globalSearch" type="search" placeholder="Search products, sales, customers…" aria-label="Global search"><span class="shortcut">⌘ K</span></div>
+      <div class="top-actions"><button class="icon-button" data-action="notifications" aria-label="Notifications"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.7"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg><i class="notify-dot"></i></button><button class="icon-button" data-action="toggle-theme" aria-label="Toggle appearance"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.7"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg></button><div class="top-avatar"><div class="user-photo">MA</div><div class="user-info"><span>Shop Manager</span><small>Owner account</small></div></div></div>
+    </header>
+    <main class="content" id="pageContent" tabindex="-1"></main>
+  </section>
+</div>
+<nav class="mobile-bottom" id="mobileBottom" aria-label="Mobile navigation"></nav>
+<div id="modalHost"></div><div class="toast-wrap" id="toastWrap" aria-live="polite"></div>
+<script src="./frontend/js/app.js" defer></script>
+<script type="module" src="./frontend/js/auth.js"></script>
+</body>
+</html>
