@@ -1,4 +1,4 @@
-﻿// MA Collection â€” owner authentication gate (Step 1).
+// MA Collection â€” owner authentication gate (Step 1).
 //
 // Adds a signup / login gate and one-time store setup in front of the existing
 // demo app, using the shared Supabase JS v2 client (frontend/js/supabase-client.js).

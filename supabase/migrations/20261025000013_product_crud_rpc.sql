@@ -1,4 +1,4 @@
-﻿create or replace function public.save_product(
+create or replace function public.save_product(
   p_store_id uuid,
   p_product_id uuid,
   p_name text,
