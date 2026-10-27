@@ -18,6 +18,12 @@ Use a **new, separate Supabase project** for this app. Do not reuse the storefro
 | `20261015000007_expenses_employees.sql` | expenses, employees |
 | `20261015000008_rls_and_grants.sql` | RLS on every table, policies, column-level grants |
 | `20261015000009_bootstrap.sql` | profile-on-signup trigger, `create_store()` |
+| `20261016000010_role_based_rls.sql` | owner / manager / cashier policies |
+| `20261016000011_cost_privacy.sql` | hide cost and profit from cashiers |
+| `20261016000012_checkout.sql` | atomic `create_sale()` |
+| `20261024060215_store_logo_storage.sql` | `store-logos` bucket and owner-only policies |
+| `20261025000013_product_crud_rpc.sql` | `save_product()`, `archive_product()` |
+| `20261027000014_khata_payment_stock_adjust.sql` | `record_khata_payment()`, `adjust_stock()` |
 
 The database starts empty. There is no seed data.
 

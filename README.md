@@ -40,12 +40,15 @@ Open `http://127.0.0.1:4173` in a browser. To review the old single-file snapsho
 - `frontend/js/app.js` is the JavaScript extracted from the saved HTML, including render functions, actions, local storage, current-bill controls, receipt/PDF/share logic and local Khata ledger.
 - `preview-standalone.html` preserves the complete single-file saved preview for reference; it is deliberately outside `frontend/`.
 
+## Current status
+
+- Sign-in, store setup and roles: Supabase Auth + `store_members` with RLS.
+- Products, categories, stock adjustments, sales/checkout, customers, Khata, expenses, suppliers, employees and store profile/logo use Supabase.
+- Purchase orders are still browser-only.
+- See `docs/SETUP-AND-BACKUP.md` for configuration, migrations, deployment and backups.
+
 ## Important limitations
 
-- Data is stored in this browser using `localStorage`; it is not shared across devices or users.
-- Supabase/PostgreSQL connection, authentication, server-side checkout, and row-level security are not implemented/connected in this package.
-- No card payment is charged or processed. Card is just a recorded method in the frontend.
-- WhatsApp cannot silently attach a local PDF from a browser. The app downloads the PDF and uses the available share sheet / WhatsApp chat fallback.
-- The source retains the UI's existing functionality. The smoke test checks JavaScript syntax and key feature code, not every interactive workflow in a real browser.
-
-Do not use real customer/payment data until a secure backend and access controls are implemented and tested.
+- No card or online payment is processed; the method is only recorded.
+- Migration 0014 must be applied to the Supabase project before Khata repayments and stock adjustments work.
+- Employee invitations (`invite-employee` Edge Function) exist on the server but are not yet wired into the Employees screen.

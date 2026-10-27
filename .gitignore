@@ -11,3 +11,4 @@ Thumbs.db
 *.before-*
 supabase/.temp/
 server1.txt
+tests/e2e/*.png
