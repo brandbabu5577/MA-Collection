@@ -29,6 +29,37 @@ select set_config('session.admin_role', current_user, false);
 do $$
 declare v_missing text; v_empty text; r record; n bigint;
 begin
+  select count(*) into n from unnest(array[
+    'categories_store_name_uidx','products_store_sku_uidx','products_store_name_idx','products_store_category_idx',
+    'stock_movements_product_idx','stock_movements_ref_idx','store_members_user_idx','store_members_one_owner_idx',
+    'suppliers_store_name_uidx','supplier_payments_supplier_idx','purchase_orders_store_date_idx','purchase_orders_store_supplier_idx',
+    'po_items_po_idx','po_items_product_idx','supplier_entries_supplier_idx','sales_store_date_idx','sales_store_customer_idx',
+    'sales_store_status_idx','sale_items_sale_idx','sale_items_product_idx','sale_payments_sale_idx','expenses_store_date_idx',
+    'employees_store_idx','employees_store_user_uidx','customers_store_phone_uidx','customers_store_name_idx',
+    'customer_payments_customer_idx','khata_entries_customer_idx','purchase_orders_store_idempotency_uidx',
+    'suppliers_store_create_idempotency_uidx'
+  ]::text[]) expected(index_name)
+  where exists (
+    select 1 from pg_class i join pg_namespace ns on ns.oid=i.relnamespace
+    join pg_index ix on ix.indexrelid=i.oid
+    where ns.nspname='public' and i.relname=expected.index_name and ix.indisvalid
+  );
+  perform tests.ok(n=30, 'all 30 explicitly declared indexes exist and are valid');
+
+  select count(*) into n from pg_constraint where connamespace='public'::regnamespace and not convalidated;
+  perform tests.ok(n=0, 'all public schema constraints are validated');
+
+  select count(*) into n from pg_constraint where connamespace='public'::regnamespace and contype='f';
+  perform tests.ok(n>=19, 'store-scoped table relationships are present');
+
+  select count(*) into n from pg_proc p join pg_namespace ns on ns.oid=p.pronamespace
+  where ns.nspname='public'
+    and p.proname=any(array['create_store','create_sale','save_product','archive_product','adjust_stock','set_stock_quantity',
+      'record_customer_payment','create_purchase_order','receive_purchase_order','cancel_purchase_order',
+      'record_supplier_payment','adjust_supplier_balance','save_expense','create_supplier_with_opening_balance'])
+    and p.prosecdef and coalesce(array_to_string(p.proconfig,','),'') like '%search_path=""%';
+  perform tests.ok(n=14, 'all 14 privileged database entry points are SECURITY DEFINER with an empty search path');
+
   select string_agg(c.relname, ', ') into v_missing
     from pg_class c join pg_namespace ns on ns.oid = c.relnamespace
    where ns.nspname = 'public' and c.relkind = 'r' and not c.relrowsecurity;
@@ -172,7 +203,7 @@ begin
   perform tests.ok(tests.try(format($q$insert into public.customer_payments (store_id,customer_id,amount,idempotency_key) values (%L,%L,0,'pay-key-001')$q$, s1, c1)) = '23514', 'zero customer payment rejected');
 
   insert into public.suppliers (store_id,name) values (s1,'Al-Noor') returning id into sup;
-  insert into public.purchase_orders (store_id,po_number,supplier_id,total) values (s1, public.next_store_number(s1,'purchase_order'), sup, 500) returning id into po;
+  insert into public.purchase_orders (store_id,po_number,supplier_id,total,idempotency_key) values (s1, public.next_store_number(s1,'purchase_order'), sup, 500, 'phase1-fixture-001') returning id into po;
   perform tests.ok((select po_number from public.purchase_orders where id = po) = 101, 'first PO number is 101');
   perform tests.ok(tests.try(format($q$insert into public.purchase_order_items (store_id,purchase_order_id,description,quantity_ordered,unit_cost,line_total) values (%L,%L,'Fabric',10,50,500)$q$, s1, po)) = 'OK', 'consistent PO item accepted');
   -- A second item makes the lines sum to 600 while the header says 500: must fail when constraints are checked.

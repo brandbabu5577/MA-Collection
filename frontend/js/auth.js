@@ -1,9 +1,7 @@
-﻿// MA Collection â€” owner authentication gate (Step 1).
+// MA Collection â€” owner authentication gate (Step 1).
 //
 // Adds a signup / login gate and one-time store setup in front of the existing
-// demo app, using the shared Supabase JS v2 client (frontend/js/supabase-client.js).
-// Only authentication and the owner's initial store are handled here: products,
-// sales, inventory, Khata and every other feature stay on demo data for now.
+// app, using the shared Supabase JS v2 client (frontend/js/supabase-client.js).
 //
 // Security notes:
 //  - Authentication is verified by Supabase Auth only. No localStorage flag is
@@ -52,7 +50,7 @@ function statusMarkup() {
 }
 
 function card(inner) {
-  return `<div class="auth-card"><div class="auth-brand"><div class="brand-mark">MA</div><div><div class="brand-name">MA Collection</div><div class="brand-caption">Retail Studio</div></div></div>${inner}</div>`;
+  return `<div class="auth-card"><div class="auth-brand"><div class="brand-mark" style="overflow:hidden"><img src="./frontend/assets/ma-collection-logo.png" alt="MA Collection logo" style="width:100%;height:100%;object-fit:contain;border-radius:inherit"></div><div><div class="brand-name">MA Collection</div><div class="brand-caption">Retail Studio</div></div></div>${inner}</div>`;
 }
 
 function renderGate() {
@@ -138,7 +136,7 @@ function renderGate() {
       <div><label for="password">Password</label><input id="password" name="password" type="password" required minlength="6" autocomplete="${isSignup ? 'new-password' : 'current-password'}" placeholder="${isSignup ? 'At least 6 characters' : 'Your password'}"></div>
       <button class="btn primary full" type="submit" ${state.busy ? 'disabled' : ''}>${state.busy ? 'Please waitâ€¦' : (isSignup ? 'Create account' : 'Log in')}</button>
     </form>
-    <div class="auth-demo">Sample data is still shown in this build. Products, sales, inventory and Khata are not connected to the database yet.</div>
+    <div class="auth-demo">Sign in to load the products, sales, stock and customer records for your selected store.</div>
   `);
   const first = gate.querySelector('input');
   if (first) first.focus();
@@ -154,9 +152,15 @@ async function submitLogin(form) {
   state.busy = true;
   state.pendingEmail = email;
   renderGate();
-  const { error } = await state.client.auth.signInWithPassword({ email, password });
-  state.busy = false;
-  if (error) {
+  try {
+    const { error } = await state.client.auth.signInWithPassword({ email, password });
+    state.busy = false;
+    if (error) {
+      state.status = { type: 'error', text: describeError(error) };
+      return renderGate();
+    }
+  } catch (error) {
+    state.busy = false;
     state.status = { type: 'error', text: describeError(error) };
     return renderGate();
   }
@@ -179,13 +183,21 @@ async function submitSignup(form) {
   state.pendingEmail = email;
   state.pendingName = fullName;
   renderGate();
-  const { data, error } = await state.client.auth.signUp({
-    email,
-    password,
-    options: fullName ? { data: { full_name: fullName } } : {}
-  });
-  state.busy = false;
-  if (error) {
+  let data;
+  try {
+    const result = await state.client.auth.signUp({
+      email,
+      password,
+      options: fullName ? { data: { full_name: fullName } } : {}
+    });
+    data = result.data;
+    state.busy = false;
+    if (result.error) {
+      state.status = { type: 'error', text: describeError(result.error) };
+      return renderGate();
+    }
+  } catch (error) {
+    state.busy = false;
     state.status = { type: 'error', text: describeError(error) };
     return renderGate();
   }
@@ -209,18 +221,24 @@ async function submitSetup(form) {
   }
   state.busy = true;
   renderGate();
-  const { data, error } = await state.client.rpc('create_store', {
-    p_name: name,
-    p_business_type: businessType,
-    p_phone: phone || null,
-    p_address: address || null
-  });
-  state.busy = false;
-  if (error) {
+  try {
+    const { data, error } = await state.client.rpc('create_store', {
+      p_name: name,
+      p_business_type: businessType,
+      p_phone: phone || null,
+      p_address: address || null
+    });
+    state.busy = false;
+    if (error) {
+      state.status = { type: 'error', text: describeError(error) };
+      return renderGate();
+    }
+    unlockApp({ id: data, name, business_type: businessType, phone: phone || '', address: address || '', logo_path: '', role: 'owner' });
+  } catch (error) {
+    state.busy = false;
     state.status = { type: 'error', text: describeError(error) };
     return renderGate();
   }
-  unlockApp({ id: data, name, business_type: businessType, phone: phone || '', address: address || '', logo_path: '', role: 'owner' });
 }
 
 async function resendConfirmation(trigger) {
@@ -228,12 +246,19 @@ async function resendConfirmation(trigger) {
     state.mode = 'signup';
     return renderGate();
   }
+  state.busy = true;
   trigger.disabled = true;
-  const { error } = await state.client.auth.resend({ type: 'signup', email: state.pendingEmail });
-  state.status = error
-    ? { type: 'error', text: describeError(error) }
-    : { type: 'info', text: 'Confirmation email sent again to ' + state.pendingEmail + '.' };
-  renderGate();
+  try {
+    const { error } = await state.client.auth.resend({ type: 'signup', email: state.pendingEmail });
+    state.status = error
+      ? { type: 'error', text: describeError(error) }
+      : { type: 'info', text: 'Confirmation email sent again to ' + state.pendingEmail + '.' };
+  } catch (error) {
+    state.status = { type: 'error', text: describeError(error) };
+  } finally {
+    state.busy = false;
+    renderGate();
+  }
 }
 
 async function handleSession(session) {
@@ -251,11 +276,18 @@ async function handleSession(session) {
   state.status = null;
   renderGate();
 
-  const { data, error } = await state.client
-    .from('store_members')
-    .select('store_id, role, stores(name, business_type, phone, address, logo_path)')
-    .eq('user_id', user.id)
-    .order('store_id');
+  let data, error;
+  try {
+    ({ data, error } = await state.client
+      .from('store_members')
+      .select('store_id, role, stores(name, business_type, phone, address, logo_path)')
+      .eq('user_id', user.id)
+      .order('store_id'));
+  } catch (requestError) {
+    state.status = { type: 'error', text: describeError(requestError) };
+    state.mode = 'login';
+    return renderGate();
+  }
 
   if (error) {
     state.status = { type: 'error', text: describeError(error) };
@@ -333,6 +365,18 @@ function applyAccountLabels() {
     const small = top.querySelector('small');
     if (small) small.textContent = roleLabel + ' account';
   }
+
+  /* Replace any remaining text-based .user-photo placeholders with the logo */
+  document.querySelectorAll('.user-photo').forEach(function (el) {
+    if (el.querySelector('img')) return; // already has logo
+    const img = document.createElement('img');
+    img.src = './frontend/assets/ma-collection-logo.png';
+    img.alt = 'MA Collection logo';
+    img.style.cssText = 'width:100%;height:100%;object-fit:contain;border-radius:inherit';
+    el.style.overflow = 'hidden';
+    el.style.padding = '1px';
+    el.replaceChildren(img);
+  });
 }
 
 function unlockApp(store) {
@@ -356,14 +400,21 @@ function lockApp() {
   window.MA_STORE = null;
   window.MA_USER = null;
   appRoot.hidden = true;
+  window.dispatchEvent(new Event('ma-store-cleared'));
 }
 
 async function signOut() {
   if (!state.client) return;
   state.busy = true;
-  const { error } = await state.client.auth.signOut();
-  state.busy = false;
-  if (error) {
+  try {
+    const { error } = await state.client.auth.signOut();
+    state.busy = false;
+    if (error) {
+      state.status = { type: 'error', text: describeError(error) };
+      return renderGate();
+    }
+  } catch (error) {
+    state.busy = false;
     state.status = { type: 'error', text: describeError(error) };
     return renderGate();
   }
@@ -377,6 +428,7 @@ gate.addEventListener('submit', event => {
   const form = event.target.closest('form[data-auth-form]');
   if (!form) return;
   event.preventDefault();
+  if (state.busy) return;
   state.status = null;
   const kind = form.dataset.authForm;
   if (kind === 'setup') return void submitSetup(form);
@@ -432,10 +484,17 @@ async function init() {
   state.mode = 'loading';
   renderGate();
 
-  const { data } = await state.client.auth.getSession();
-  if (data && data.session) await handleSession(data.session);
-  else {
+  try {
+    const { data, error } = await state.client.auth.getSession();
+    if (error) throw error;
+    if (data && data.session) await handleSession(data.session);
+    else {
+      state.mode = 'login';
+      renderGate();
+    }
+  } catch (error) {
     state.mode = 'login';
+    state.status = { type: 'error', text: describeError(error) };
     renderGate();
   }
 

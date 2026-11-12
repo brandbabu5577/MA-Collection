@@ -14,7 +14,7 @@
 returns uuid
 language plpgsql
 security definer
-set search_path = public
+set search_path = ''
 as $$
 declare
   v_category_id uuid;

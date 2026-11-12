@@ -5,8 +5,10 @@
   "description": "Structured source package for the MA Collection shop-management frontend",
   "scripts": {
     "start": "node server.js",
-    "test": "node tests/syntax-check.cjs",
-    "db:check": "bash supabase/tests/local/run-local-checks.sh"
+    "build": "node scripts/build.cjs",
+    "test": "node tests/syntax-check.cjs && node --test tests/*.test.cjs",
+    "db:check": "bash supabase/tests/local/run-local-checks.sh",
+    "db:check:win": "powershell -NoProfile -File supabase/tests/local/run-windows-isolated-checks.ps1"
   },
   "engines": {
     "node": ">=18"

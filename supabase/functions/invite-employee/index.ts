@@ -36,9 +36,11 @@ export default {
     const phone = String(body.phone ?? "").trim();
     const role = String(body.role ?? "").trim().toLowerCase();
 
-    if (!storeId || !email || !fullName || !["manager", "cashier"].includes(role)) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(storeId) ||
+        !email || email.length > 254 || !fullName || fullName.length > 120 ||
+        phone.length > 30 || !["manager", "cashier"].includes(role)) {
       return reply({
-        error: "store_id, email, full_name, and role (manager/cashier) are required.",
+        error: "A valid store, email, employee name and role (manager/cashier) are required.",
       }, 400);
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -68,7 +70,15 @@ export default {
       });
 
     if (inviteError || !invite.user) {
-      return reply({ error: inviteError?.message ?? "Invitation failed." }, 400);
+      const code = String(inviteError?.code ?? "").toLowerCase();
+      const message = String(inviteError?.message ?? "");
+      const duplicate = ["email_exists", "user_already_exists", "identity_already_exists"].includes(code) ||
+        /already registered|already exists|already invited|email.*taken/i.test(message);
+      return reply({
+        error: duplicate
+          ? "This email already has an account or invitation."
+          : "Invitation could not be sent. Check the email address and try again.",
+      }, duplicate ? 409 : 400);
     }
 
     const invitedUserId = invite.user.id;
@@ -78,8 +88,14 @@ export default {
       .insert({ store_id: storeId, user_id: invitedUserId, role });
 
     if (roleError) {
-      await ctx.supabaseAdmin.auth.admin.deleteUser(invitedUserId);
-      return reply({ error: "Could not assign the employee role." }, 500);
+      const { error: cleanupError } = await ctx.supabaseAdmin.auth.admin.deleteUser(invitedUserId);
+      const duplicate = roleError.code === "23505";
+      if (cleanupError) {
+        return reply({ error: "Invitation failed and account cleanup could not be confirmed. Contact the administrator before retrying." }, 500);
+      }
+      return reply({
+        error: duplicate ? "This employee already belongs to the store." : "Could not assign the employee role.",
+      }, duplicate ? 409 : 500);
     }
 
     const { error: employeeError } = await ctx.supabaseAdmin
@@ -94,13 +110,14 @@ export default {
       });
 
     if (employeeError) {
-      await ctx.supabaseAdmin
-        .from("store_members")
-        .delete()
-        .eq("store_id", storeId)
-        .eq("user_id", invitedUserId);
-      await ctx.supabaseAdmin.auth.admin.deleteUser(invitedUserId);
-      return reply({ error: "Could not save the employee record." }, 500);
+      const { error: cleanupError } = await ctx.supabaseAdmin.auth.admin.deleteUser(invitedUserId);
+      if (cleanupError) {
+        return reply({ error: "Invitation failed and account cleanup could not be confirmed. Contact the administrator before retrying." }, 500);
+      }
+      const duplicate = employeeError.code === "23505";
+      return reply({
+        error: duplicate ? "This employee already belongs to the store." : "Could not save the employee record.",
+      }, duplicate ? 409 : 500);
     }
 
     return reply({

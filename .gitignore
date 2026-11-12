@@ -11,3 +11,6 @@ Thumbs.db
 *.before-*
 supabase/.temp/
 server1.txt
+# Cloudflare & Build outputs
+dist/
+.wrangler/

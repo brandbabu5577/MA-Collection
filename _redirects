@@ -1,0 +1,13 @@
+# Block access to internal files and directories if deployed from root
+/supabase/* /404 404
+/.backups/* /404 404
+/tests/* /404 404
+/docs/* /404 404
+/*.bak /404 404
+/*.zip /404 404
+/package.json /404 404
+/package-lock.json /404 404
+/server.js /404 404
+
+# SPA fallback
+/* /index.html 200

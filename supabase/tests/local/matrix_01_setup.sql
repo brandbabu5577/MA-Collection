@@ -57,8 +57,8 @@ begin
     values (s1, sup1, 100, 'matrix-sp-0001');
   insert into public.supplier_entries (store_id, supplier_id, entry_type, amount_change, balance_after)
     values (s1, sup1, 'opening_balance', 500, 500);
-  insert into public.purchase_orders (store_id, po_number, supplier_id, total)
-    values (s1, public.next_store_number(s1, 'purchase_order'), sup1, 700) returning id into po1;
+  insert into public.purchase_orders (store_id, po_number, supplier_id, total, idempotency_key)
+    values (s1, public.next_store_number(s1, 'purchase_order'), sup1, 700, 'matrix-po-fixture-001') returning id into po1;
   insert into public.purchase_order_items (store_id, purchase_order_id, description,
                                            quantity_ordered, unit_cost, line_total)
     values (s1, po1, 'Matrix Fabric', 1, 700, 700);
